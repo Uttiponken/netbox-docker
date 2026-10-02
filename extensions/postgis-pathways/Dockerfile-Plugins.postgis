@@ -1,0 +1,42 @@
+# Extension image: builds on top of the already-built base plugins image
+# (netbox:latest-plugins from ../../Dockerfile-Plugins) and adds PostGIS
+# support + netbox-pathways. See ../../docs/OPERATIONS.md §11.
+#
+# Build context must be the repository root, e.g.:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#                  -f extensions/postgis-pathways/docker-compose.postgis.yml \
+#                  build --no-cache netbox
+FROM netbox:latest-plugins
+
+# django.contrib.gis imports GDAL/GEOS bindings via ctypes at Python import
+# time (not at DB-connection time), so these system libraries must exist
+# before anything imports settings — i.e. before pip install and before
+# collectstatic below. Package names are the same on Debian and Ubuntu.
+RUN apt-get update -qq \
+    && apt-get install -y --no-install-recommends \
+       binutils \
+       gdal-bin \
+       libgdal-dev \
+       libgeos-dev \
+       libproj-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# netbox-pathways pulls in djangorestframework-gis and networkx itself.
+# Alpha software (see plugin_requirements.txt comment convention) — pin
+# exact version, re-check its NetBox min/max_version before any bump.
+RUN /usr/local/bin/uv pip install netbox-pathways==0.2.2
+
+# NOTE: docker-compose.yml bind-mounts ./configuration over /etc/netbox/config
+# at RUNTIME (read-only), which shadows anything COPY'd here — so this step
+# only matters for `collectstatic` succeeding at BUILD time (no bind mount
+# exists during `docker build`). docker-compose.postgis.yml separately
+# overrides the runtime mount to point at this same source directory, so
+# both paths stay in sync automatically. See docs/OPERATIONS.md §11.4 —
+# this mount-shadowing behavior is easy to miss and silently ignore your
+# changes if you forget the compose-side override.
+COPY extensions/postgis-pathways/configuration/extra.py /etc/netbox/config/extra.py
+COPY extensions/postgis-pathways/configuration/plugins.py /etc/netbox/config/plugins.py
+
+RUN DEBUG="true" SECRET_KEY="dummydummydummydummydummydummydummydummydummydummy" \
+    /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py collectstatic --no-input

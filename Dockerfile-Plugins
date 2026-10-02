@@ -1,0 +1,18 @@
+FROM docker.io/netboxcommunity/netbox:v4.6-5.0.2
+
+# All third-party plugins are pinned together in one file and resolved in a
+# single `uv pip install`. VIRTUAL_ENV is already set by the base image, so
+# uv installs straight into /opt/netbox/venv without needing --python.
+COPY ./plugin_requirements.txt /opt/netbox/
+RUN /usr/local/bin/uv pip install -r /opt/netbox/plugin_requirements.txt
+
+# Your own in-development plugin, installed editable so bind-mounted source
+# changes take effect on a container restart (no rebuild needed).
+COPY ./custom-plugins/netbox-example-plugin /opt/netbox/custom-plugins/netbox-example-plugin
+RUN /usr/local/bin/uv pip install -e /opt/netbox/custom-plugins/netbox-example-plugin
+
+COPY configuration/configuration.py /etc/netbox/config/configuration.py
+COPY configuration/plugins.py /etc/netbox/config/plugins.py
+
+RUN DEBUG="true" SECRET_KEY="dummydummydummydummydummydummydummydummydummydummy" \
+    /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py collectstatic --no-input

@@ -1,0 +1,55 @@
+# PostGIS + netbox-pathways extension overlay. Compose with the base files:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#                  -f extensions/postgis-pathways/docker-compose.postgis.yml \
+#                  <command>
+#
+# See docs/OPERATIONS.md §11 before applying this to an existing deployment
+# — it changes the database engine and requires a one-time
+# `CREATE EXTENSION postgis;` step.
+services:
+  postgres:
+    # Must track the SAME PostgreSQL major version as the base
+    # docker-compose.yml's postgres image (currently 18). PostGIS's own
+    # versioning (the "-3.6" part) is independent of both Postgres and
+    # NetBox versions — check https://hub.docker.com/r/postgis/postgis/tags
+    # for the newest PostGIS build against your Postgres major version.
+    #
+    # PLATFORM NOTE: the official postgis/postgis image is published for
+    # linux/amd64 only (confirmed via `docker manifest inspect` — no arm64
+    # variant exists as of this writing). On an amd64 Debian host (the
+    # normal case for a server) this is a non-issue and the `platform` line
+    # below is unnecessary. On an arm64 host (e.g. certain cloud instances
+    # or an Arm-based Debian box) you need QEMU emulation — install
+    # `qemu-user-static`/`binfmt-support` and keep the platform pin below,
+    # at a real performance cost, or switch to a self-built multi-arch
+    # PostGIS image instead.
+    platform: linux/amd64
+    image: postgis/postgis:18-3.6-alpine
+
+  netbox:
+    # Distinct tag from the base netbox:latest-plugins so building this
+    # extension never clobbers the base image — the two variants coexist,
+    # and switching between them is just choosing which compose -f chain to
+    # run, not a destructive rebuild.
+    image: netbox:latest-plugins-postgis
+    build:
+      context: .
+      dockerfile: extensions/postgis-pathways/Dockerfile-Plugins.postgis
+    # IMPORTANT: docker-compose.yml bind-mounts ./configuration over
+    # /etc/netbox/config at runtime, which would otherwise shadow the
+    # postgis-specific extra.py/plugins.py baked into the image above and
+    # silently run with the BASE (non-postgis) config instead. Compose
+    # merges `volumes:` entries by target path, so this line replaces just
+    # that one mount — the media/reports/scripts/custom-plugins mounts from
+    # the base files are untouched.
+    volumes:
+      - ./extensions/postgis-pathways/configuration:/etc/netbox/config:z,ro
+
+  netbox-worker:
+    image: netbox:latest-plugins-postgis
+    build:
+      context: .
+      dockerfile: extensions/postgis-pathways/Dockerfile-Plugins.postgis
+    volumes:
+      - ./extensions/postgis-pathways/configuration:/etc/netbox/config:z,ro
