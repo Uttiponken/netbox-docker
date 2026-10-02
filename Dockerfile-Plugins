@@ -11,6 +11,11 @@ RUN /usr/local/bin/uv pip install -r /opt/netbox/plugin_requirements.txt
 COPY ./custom-plugins/netbox-example-plugin /opt/netbox/custom-plugins/netbox-example-plugin
 RUN /usr/local/bin/uv pip install -e /opt/netbox/custom-plugins/netbox-example-plugin
 
+# netbox-trace-print lives in its own repository (../netbox-trace-print); the
+# compose override supplies it as the named build context "traceprint".
+COPY --from=traceprint . /opt/netbox/custom-plugins/netbox-trace-print
+RUN /usr/local/bin/uv pip install -e /opt/netbox/custom-plugins/netbox-trace-print
+
 COPY configuration/configuration.py /etc/netbox/config/configuration.py
 COPY configuration/plugins.py /etc/netbox/config/plugins.py
 

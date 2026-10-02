@@ -13,6 +13,7 @@ PLUGINS = [
     "netbox_otp_plugin",
     "netbox_floorplan",  # pip package is netbox-floorplan-plugin, app label is netbox_floorplan
     "netbox_wdm",
+    "netbox_trace_print",
 ]
 
 PLUGINS_CONFIG = {
