@@ -475,6 +475,10 @@ failure mode before it happens against the real database.
 
 ## 7. Air-gapped deployment: build, transfer, install
 
+> **Replacing an existing netbox-docker installation and keeping its data?** Use
+> `OFFLINE-REPLACE-INSTALL.md`: it covers the PostGIS image set, the backup of the old installation, a rehearsal
+> and the cut-over. This section describes the generic build, transfer and install.
+
 Two Debian 13 hosts: **staging** (internet access, used to build) and
 **air-gapped** (no internet access, runs production).
 

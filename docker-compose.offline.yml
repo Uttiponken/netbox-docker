@@ -1,0 +1,32 @@
+# Overlay for BUILDING the image set that is shipped to an offline host, and for RUNNING it there.
+#
+# Unlike docker-compose.override.yml (the development setup: source trees bind-mounted into the containers),
+# this overlay mounts NOTHING from the host except the configuration directory: the plugins (including
+# netbox-trace-print and the example plugin) are baked into the image by Dockerfile-Plugins.
+#
+# Optional settings in a ".env" file next to this file (Compose reads it by itself):
+#   COMPOSE_PROJECT_NAME=netbox-plugins   the name that prefixes containers, network and volumes
+#   NETBOX_HTTP_PORT=8000                 the port NetBox is published on
+#
+# Use it with an explicit chain (docker-compose.override.yml is only picked up when no -f is given):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.offline.yml \
+#                  -f extensions/postgis-pathways/docker-compose.postgis.yml <command>
+#
+# See docs/OFFLINE-REPLACE-INSTALL.md.
+services:
+  netbox:
+    image: netbox:latest-plugins
+    pull_policy: never          # the image is built here or loaded from images.tar.gz, never pulled
+    ports:
+      - "${NETBOX_HTTP_PORT:-8000}:8080"      # the host port; set NETBOX_HTTP_PORT in .env to change it
+    build:
+      context: .
+      dockerfile: Dockerfile-Plugins
+      additional_contexts:
+        # only needed when building; the checkout of netbox-trace-print next to this repository
+        traceprint: ../netbox-trace-print
+
+  netbox-worker:
+    image: netbox:latest-plugins
+    pull_policy: never

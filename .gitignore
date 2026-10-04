@@ -12,3 +12,7 @@ configuration/ldap/*
 !configuration/logging.py
 !configuration/plugins.py
 super-linter.log
+
+# Python caches
+__pycache__/
+*.pyc
