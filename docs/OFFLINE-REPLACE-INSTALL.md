@@ -114,9 +114,19 @@ starts, otherwise the pathways migration fails.
 ```bash
 export COMPOSE_PROJECT_NAME=nbtest NETBOX_HTTP_PORT=18000
 docker compose up -d --wait postgres
-docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS postgis"'
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS postgis"'   # the PostGIS image usually has done it already: "already exists, skipping" is fine
 docker compose up -d                           # first start: migrations, takes several minutes
+```
+
+On a new database the first start takes a few minutes (about 3 on the development machine). `docker compose up -d`
+may end with `dependency failed to start: container …-netbox-1 is unhealthy`: the web container's health check gives
+up before the migrations are done, so the worker is not started. That is harmless. Wait until the web container
+is healthy, then start the rest:
+
+```bash
 docker compose logs -f netbox                  # wait for "Listening at", Ctrl-C to leave
+docker compose ps netbox                       # healthy
+docker compose up -d                           # now the worker starts as well
 docker compose ps                              # everything healthy
 
 docker compose exec -T netbox sh -c 'cd /opt/netbox/netbox && python manage.py shell -c "from django.conf import settings; print(settings.PLUGINS)"'
@@ -209,6 +219,7 @@ How to read it:
 | NetBox is **4.6.x** | The simple case. The new image starts on the restored data. |
 | NetBox is an **older 4.x** | The new container runs all newer migrations on first start (`migrate`, `trace_paths`, `reindex`), which is why you rehearse in step E. Read the NetBox release notes for every version in between. |
 | NetBox is **3.x** | Stop and ask for an upgrade path first: NetBox 4.0 had requirements on the version you upgrade from. |
+| The app `netbox_trace_print` is in `django_migrations` | The old installation already ran this plugin under its earlier name (≤ 0.6.2). Rename its tables once, **before** F9: README of netbox-tracepath-plugin, "Upgrading from netbox-trace-print". |
 | An app in `django_migrations` that is **not** among the plugins in section 0 | Its data stays in the database but the new NetBox has no code for it. If you still need that plugin, add it to `plugin_requirements.txt` and rebuild (A3) before going on. |
 | The old installation has its own settings (LDAP, SSO, SMTP, proxy) | Steps F4 and F5 carry them over. Note them now: read `$OLD/env/*.env` and `$OLD/configuration/*.py`. |
 
@@ -434,10 +445,15 @@ docker compose logs -f netbox        # leave with Ctrl-C
 
 On a database from an older NetBox the first start applies the missing migrations, then runs `trace_paths`,
 `remove_stale_contenttypes`, `clearsessions` and `reindex --lazy` before the web server starts ("Listening at"). On
-a large database that can take a long time; it is normal for `docker compose ps` to show *starting* meanwhile. The
-worker starts after the web container is healthy.
+a large database that can take a long time; it is normal for `docker compose ps` to show *starting* meanwhile.
+
+If the migrations take longer than the health check allows, `docker compose up -d` ends with `dependency failed to
+start: container …-netbox-1 is unhealthy` and the worker is not started. Nothing is wrong: keep following the log
+until "Listening at", wait for `docker compose ps netbox` to say *healthy*, then run `docker compose up -d` once more
+to start the worker.
 
 ```bash
+docker compose up -d                 # only needed if the first call stopped at "unhealthy"
 docker compose ps                    # netbox and netbox-worker: healthy
 ```
 
@@ -520,5 +536,6 @@ before every update.
 | `bind source path does not exist` or the plugin fails to import with an empty directory | `docker-compose.override.yml` is being used. See the row above. |
 | Everyone is logged out and API tokens do not work | `SECRET_KEY` or `API_TOKEN_PEPPER_1` differ from the old installation (F4). Put the old values back, `docker compose up -d`. |
 | First start takes very long | Migrations, `trace_paths` and `reindex` on a big database. Follow `docker compose logs -f netbox`. |
+| `dependency failed to start: container …-netbox-1 is unhealthy`, and no worker | The first start outlasted the health check. Wait until `docker compose ps netbox` says healthy, then `docker compose up -d` again. |
 | Permission denied writing uploads or reports | Ownership of the restored volumes (F8, last paragraph). |
 | `port is already allocated` | The old installation or the rehearsal still publishes that port. Stop it, or set another `NETBOX_HTTP_PORT` in `.env`. |
