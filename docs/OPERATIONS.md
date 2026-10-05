@@ -6,7 +6,8 @@ version changes.
 Last verified: 2026-09-26, on netbox-docker `docker compose` (Docker Engine
 24.0.2 / Compose v2.19.0). Target execution/staging OS for this runbook:
 **Debian 13 "trixie"** (instructions are identical on Debian 12 "bookworm" —
-substitute the codename in the apt source line).
+substitute the codename in the apt source line). The Docker prerequisites for
+**Ubuntu 24.04** and **Fedora** are in §2.2 and §2.3.
 
 ---
 
@@ -54,9 +55,21 @@ repository at tag `5.0.2` (commit `5adc62fe3fa65163c4ef63733bdcbd3e59b5c544`).
 
 ---
 
-## 2. Prerequisites (Debian 13)
+## 2. Prerequisites
 
-### 2.1 Docker Engine + Compose plugin (official Docker apt repo)
+Everything in this runbook needs **Docker Engine**, the **Docker Compose v2 plugin** (`docker compose`, version
+**2.17 or newer**: the offline overlay uses `additional_contexts`; tested with v2.19) and the **buildx** plugin,
+plus **git**. Install them from Docker's own package repository for your OS, not from the distribution's
+`docker.io` / `docker` packages, which are older and bring a different Compose. Choose the subsection for your
+system; everything after §2 is the same on all of them.
+
+| System | Section |
+|---|---|
+| Debian 13 (and 12) | §2.1 |
+| Ubuntu 24.04 LTS | §2.2 |
+| Fedora 43 / 44 | §2.3 |
+
+### 2.1 Docker Engine + Compose plugin: Debian 13 (official Docker apt repo)
 
 ```bash
 # Remove any distro-packaged docker first, if present
@@ -88,13 +101,124 @@ docker --version              # tested against 24.0.2 or newer
 docker compose version        # tested against v2.19.0 or newer
 ```
 
-### 2.2 git
+### 2.2 Docker Engine + Compose plugin: Ubuntu 24.04 (official Docker apt repo)
+
+The commands follow Docker's installation guide for Ubuntu (docs.docker.com/engine/install/ubuntu/); they were not
+run on this repository's development machine, so check the version output at the end.
 
 ```bash
-sudo apt-get install -y git
+# Remove unofficial packages first, if present
+sudo apt remove $(dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc | cut -f1) 2>/dev/null || true
+
+# Docker's signing key and apt repository
+sudo apt update
+sudo apt install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Allow your user to run docker without sudo (log out and in after this)
+sudo usermod -aG docker "$USER"
 ```
 
-### 2.3 Disk space
+The service starts and is enabled by the package. Verify:
+
+```bash
+sudo systemctl status docker --no-pager | head -3
+docker --version              # 24.0.2 or newer
+docker compose version        # v2.19.0 or newer (v2.17 is the minimum)
+docker run --rm hello-world   # after logging out and in again; otherwise use sudo
+```
+
+**A specific version instead of the latest** (to match another host exactly):
+
+```bash
+apt list --all-versions docker-ce 2>/dev/null | head
+VERSION_STRING="<a version from the list, for example 5:29.8.2-1~ubuntu.24.04~noble>"
+sudo apt install -y docker-ce=$VERSION_STRING docker-ce-cli=$VERSION_STRING containerd.io docker-buildx-plugin docker-compose-plugin
+sudo apt-mark hold docker-ce docker-ce-cli          # keep `apt upgrade` from moving it
+```
+
+**Air-gapped host:** download the packages on the online host exactly as in §7.3 (the same four packages and
+`apt-get install --download-only`), then install them with `sudo dpkg -i *.deb`.
+
+### 2.3 Docker Engine + Compose plugin: Fedora (official Docker rpm repo)
+
+The commands follow Docker's installation guide for Fedora (docs.docker.com/engine/install/fedora/), which supports
+the two newest Fedora releases (43 and 44 at the time of writing); they were not run on this repository's
+development machine, so check the version output at the end.
+
+```bash
+# Remove unofficial packages first, if present
+sudo dnf remove -y docker docker-client docker-client-latest docker-common docker-latest \
+                   docker-latest-logrotate docker-logrotate docker-selinux docker-engine-selinux docker-engine 2>/dev/null || true
+
+# Docker's repository (Fedora 41 and newer use dnf5, where config-manager is built in)
+sudo dnf config-manager addrepo --from-repofile https://download.docker.com/linux/fedora/docker-ce.repo
+
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+# The first install asks you to accept Docker's GPG key: compare the fingerprint it shows with the one on
+# docs.docker.com/engine/install/fedora/ before you accept.
+
+# Unlike the Debian/Ubuntu packages, the install does NOT start the service
+sudo systemctl enable --now docker
+
+# Allow your user to run docker without sudo (log out and in after this)
+sudo usermod -aG docker "$USER"
+```
+
+Verify:
+
+```bash
+sudo systemctl status docker --no-pager | head -3
+docker --version              # 24.0.2 or newer
+docker compose version        # v2.19.0 or newer (v2.17 is the minimum)
+docker run --rm hello-world   # after logging out and in again; otherwise use sudo
+```
+
+SELinux can stay **enforcing**: the compose files label every bind mount with `:z`. Published ports (NetBox on 8000)
+are opened by Docker itself; if clients on other hosts cannot reach it, check the firewalld zone and any network
+firewall in front of the host.
+
+**A specific version instead of the latest:**
+
+```bash
+dnf list docker-ce --showduplicates | sort -r | head
+sudo dnf install -y docker-ce-<VERSION_STRING> docker-ce-cli-<VERSION_STRING> containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+Keep `dnf upgrade` from moving it with the `versionlock` plugin (`sudo dnf versionlock add docker-ce docker-ce-cli`).
+
+**Air-gapped host:** on the online host download the packages with their dependencies, carry the files across,
+and install them there:
+
+```bash
+mkdir docker-rpms && cd docker-rpms
+dnf download --resolve --alldeps docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+# on the air-gapped host, in the carried directory:
+sudo dnf install -y ./*.rpm
+```
+
+### 2.4 git
+
+```bash
+sudo apt-get install -y git      # Debian, Ubuntu
+sudo dnf install -y git          # Fedora
+```
+
+### 2.5 Disk space
 
 Budget **~3 GB** for the built image set (see §7.2 for exact sizes) plus
 room for the Postgres data volume, which grows with your inventory — a few
@@ -106,7 +230,7 @@ size for your actual scale.
 ## 3. Build & reproduce from scratch
 
 This is the exact sequence used to build the running deployment. Run it on
-any internet-connected Debian host with Docker installed (§2).
+any internet-connected Linux host (Debian, Ubuntu or Fedora) with Docker installed (§2).
 
 ```bash
 cd /opt   # or wherever you keep this
@@ -479,7 +603,7 @@ failure mode before it happens against the real database.
 > `OFFLINE-REPLACE-INSTALL.md`: it covers the PostGIS image set, the backup of the old installation, a rehearsal
 > and the cut-over. This section describes the generic build, transfer and install.
 
-Two Debian 13 hosts: **staging** (internet access, used to build) and
+Two Linux hosts (Debian 13, Ubuntu 24.04 or Fedora, see §2): **staging** (internet access, used to build) and
 **air-gapped** (no internet access, runs production).
 
 ### 7.1 On staging: build
@@ -519,7 +643,7 @@ cd /opt/netbox-airgap-transfer
 tar czf netbox-docker-repo.tar.gz -C /opt netbox-docker \
   --exclude='netbox-docker/.git'
 
-# Docker Engine + Compose .deb packages and their dependencies, for offline
+# Docker Engine + Compose .deb packages (Debian, Ubuntu; for Fedora see §2.3) and their dependencies, for offline
 # install on the air-gapped host (only needed the first time / OS reinstall —
 # skip if the air-gapped host already has Docker provisioned by your normal
 # OS image process)
