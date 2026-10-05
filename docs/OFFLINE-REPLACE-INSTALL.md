@@ -1,7 +1,7 @@
 # Build with all plugins on an online host, replace an existing netbox-docker on an offline host, keep the data
 
 This guide builds this repository (NetBox 4.6 + the plugins in `plugin_requirements.txt` + the example plugin +
-**netbox-trace-print** + PostGIS/netbox-pathways) on an internet-connected Linux host, carries the result into an
+**netbox-tracepath-plugin** + PostGIS/netbox-pathways) on an internet-connected Linux host, carries the result into an
 air-gapped Linux host, and replaces an **older netbox-docker installation** there **without losing its data**.
 It also takes a verified backup of the old installation first.
 
@@ -23,7 +23,7 @@ It complements `OPERATIONS.md` (§5 backups, §6 upgrades, §7 air-gapped deploy
 
 **What is built.** One image, `netbox:latest-plugins-postgis`, with NetBox v4.6 (netbox-docker release 5.0.2) and
 these plugins baked in: netbox-secrets, netbox-bgp, netbox-fms, netbox-inventory, netbox-otp-plugin,
-netbox-floorplan-plugin, netbox-wdm, netbox-pathways, the example plugin and **netbox-trace-print**. Two more
+netbox-floorplan-plugin, netbox-wdm, netbox-pathways, the example plugin and **netbox-tracepath-plugin**. Two more
 images are pulled as they are: `postgis/postgis:18-3.6-alpine` (the database) and `valkey/valkey:9.1-alpine`
 (Redis). About 2.3 GB before compression.
 
@@ -46,7 +46,7 @@ images are pulled as they are: `postgis/postgis:18-3.6-alpine` (the database) an
 
 **What was tested** (on the development machine, with this repository's own data): the offline overlay builds; the
 backup commands; a restore into a brand-new PostGIS database with every row count identical; the file volumes
-restored from their archives; the plugins, including netbox-trace-print 0.6.2 from inside the image, load and
+restored from their archives; the plugins, including netbox-tracepath-plugin 0.7.0 from inside the image, load and
 print a PDF with no source tree mounted. **Not tested:** upgrading a database from an older NetBox version, because
 that needs your data. Step E exists for that: it does the upgrade on a copy so a problem shows up before anything
 is replaced.
@@ -72,17 +72,17 @@ df -h /var/lib/docker
 ```bash
 mkdir -p ~/nbbuild && cd ~/nbbuild
 git clone https://github.com/Uttiponken/netbox-docker.git
-git clone --branch v0.6.2 https://github.com/Uttiponken/netbox-trace-print.git
+git clone --branch v0.7.0 https://github.com/Uttiponken/netbox-tracepath-plugin.git
 ls netbox-docker/docker-compose.offline.yml netbox-docker/offline.env.example   # both must exist
 ```
 
-The two directories must be siblings: the build copies the plugin from `../netbox-trace-print`. Both
+The two directories must be siblings: the build copies the plugin from `../netbox-tracepath-plugin`. Both
 repositories are private; authenticate first (`gh auth login`, or a token in the URL). Record what you are
 building:
 
 ```bash
 git -C netbox-docker rev-parse HEAD
-git -C netbox-trace-print describe --tags
+git -C netbox-tracepath-plugin describe --tags
 ```
 
 ### A3. Configure and build
@@ -144,7 +144,7 @@ tar czf netbox-docker-repo.tar.gz -C ~/nbbuild \
 {
   echo "built: $(date -u +%FT%TZ) on $(uname -m)"
   echo "netbox-docker: $(git -C ~/nbbuild/netbox-docker rev-parse HEAD)"
-  echo "netbox-trace-print: $(git -C ~/nbbuild/netbox-trace-print describe --tags)"
+  echo "netbox-tracepath-plugin: $(git -C ~/nbbuild/netbox-tracepath-plugin describe --tags)"
   docker image inspect --format '{{index .RepoTags 0}} {{.Id}}' netbox:latest-plugins-postgis postgis/postgis:18-3.6-alpine docker.io/valkey/valkey:9.1-alpine
   docker run --rm --entrypoint /usr/local/bin/uv netbox:latest-plugins-postgis pip list 2>/dev/null | grep -i -E "^netbox|^django "
 } > MANIFEST.txt
@@ -452,11 +452,11 @@ docker compose logs netbox | grep -i -E "unable to load|traceback" | head       
 In the browser (`http://<host>:<port>`):
 
 - Log in with an account that existed before. Sessions from the old installation are gone; passwords are in the database.
-- **Plugins → Plugins** lists all of them, trace-print included. Open each plugin's own menu once.
+- **Plugins → Plugins** lists all of them, tracepath included. Open each plugin's own menu once.
 - **API token:** `curl -H "Authorization: Bearer <an existing token>" http://<host>:<port>/api/status/` answers 200. This
   only works because `SECRET_KEY` and `API_TOKEN_PEPPER_1` were carried over (F4).
 - Open an object that has an uploaded image or attachment: the file loads (the media volume came across).
-- **Trace Print:** pick a cable or an interface that has a cable and print it; the PDF opens.
+- **Tracepath:** pick a cable or an interface that has a cable and print it; the PDF opens.
 - Compare a couple of objects and the totals with what the old installation showed.
 - Maps (netbox-pathways, floorplan) draw their background from a public tile server on the internet. On an air-gapped
   network the map background stays empty; the data is intact.

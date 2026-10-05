@@ -2,7 +2,7 @@
 #
 # Unlike docker-compose.override.yml (the development setup: source trees bind-mounted into the containers),
 # this overlay mounts NOTHING from the host except the configuration directory: the plugins (including
-# netbox-trace-print and the example plugin) are baked into the image by Dockerfile-Plugins.
+# netbox-tracepath-plugin and the example plugin) are baked into the image by Dockerfile-Plugins.
 #
 # Optional settings in a ".env" file next to this file (Compose reads it by itself):
 #   COMPOSE_PROJECT_NAME=netbox-plugins   the name that prefixes containers, network and volumes
@@ -24,8 +24,8 @@ services:
       context: .
       dockerfile: Dockerfile-Plugins
       additional_contexts:
-        # only needed when building; the checkout of netbox-trace-print next to this repository
-        traceprint: ../netbox-trace-print
+        # only needed when building; the checkout of netbox-tracepath-plugin next to this repository
+        tracepath: ../netbox-tracepath-plugin
 
   netbox-worker:
     image: netbox:latest-plugins
