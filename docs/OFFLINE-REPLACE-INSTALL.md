@@ -76,6 +76,19 @@ git clone --branch v0.7.0 https://github.com/Uttiponken/netbox-tracepath-plugin.
 ls netbox-docker/docker-compose.offline.yml netbox-docker/offline.env.example   # both must exist
 ```
 
+**Without git, from zip files:** download both from GitHub (*Code → Download ZIP*; for the plugin take the tag
+`v0.7.0` from *Releases*), unzip them next to each other and rename the folders, because a zip unpacks as
+`netbox-docker-main` and `netbox-tracepath-plugin-0.7.0`:
+
+```bash
+mkdir -p ~/nbbuild && cd ~/nbbuild
+unzip /path/to/netbox-docker-main.zip && mv netbox-docker-main netbox-docker
+unzip /path/to/netbox-tracepath-plugin-0.7.0.zip && mv netbox-tracepath-plugin-0.7.0 netbox-tracepath-plugin
+```
+
+A zip has no git history, so the two `git` commands below that record the version do not work; write the
+versions into `MANIFEST.txt` by hand instead (A5).
+
 The two directories must be siblings: the build copies the plugin from `../netbox-tracepath-plugin`. Both
 repositories are private; authenticate first (`gh auth login`, or a token in the URL). Record what you are
 building:

@@ -9,6 +9,13 @@ Last verified: 2026-09-26, on netbox-docker `docker compose` (Docker Engine
 substitute the codename in the apt source line). The Docker prerequisites for
 **Ubuntu 24.04** and **Fedora** are in §2.2 and §2.3.
 
+> **Two ways this runbook can read.** It started as the notes of the development setup, where a
+> `docker-compose.override.yml` (git-ignored, not in the repository) mounts source folders into the containers.
+> For building and installing from the repository, use §3 and `OFFLINE-REPLACE-INSTALL.md`: they use
+> `docker-compose.offline.yml` and a `.env` made from `offline.env.example` instead. Where a later section still
+> names `docker-compose.override.yml` or counts eight plugins, read it as that development setup (the deployment
+> now has ten: `netbox_tracepath_plugin` and `netbox_pathways` were added).
+
 ---
 
 ## 1. What this deployment is
@@ -229,65 +236,83 @@ size for your actual scale.
 
 ## 3. Build & reproduce from scratch
 
-This is the exact sequence used to build the running deployment. Run it on
-any internet-connected Linux host (Debian, Ubuntu or Fedora) with Docker installed (§2).
+This builds the deployment as it is in this repository today. Run it on any internet-connected Linux host
+(Debian, Ubuntu or Fedora) with Docker installed (§2). To carry the result to an air-gapped host and replace an
+existing installation, continue with `OFFLINE-REPLACE-INSTALL.md`: it uses exactly this build.
+
+**The repository already contains everything that makes this deployment specific**: `Dockerfile-Plugins`,
+`plugin_requirements.txt`, `configuration/plugins.py`, `custom-plugins/`, the PostGIS/pathways extension in
+`extensions/`, the offline overlay `docker-compose.offline.yml` and the settings template `offline.env.example`.
+**Nothing has to be copied in.** (Older versions of this runbook told you to restore a `docker-compose.override.yml`
+from your own archive. That file is the development setup, it mounts source folders into the containers, it is
+not part of the repository and it is not used here: `docker-compose.offline.yml` replaces it.)
+
+### 3.1 Get the two source trees, side by side
+
+The image is built from this repository **and** from the plugin repository, which must sit next to it under the
+exact name `netbox-tracepath-plugin` (the build reads `../netbox-tracepath-plugin`).
 
 ```bash
-cd /opt   # or wherever you keep this
-git clone https://github.com/netbox-community/netbox-docker.git
-cd netbox-docker
-git checkout 5adc62fe3fa65163c4ef63733bdcbd3e59b5c544   # tag 5.0.2, pinned by commit hash
+mkdir -p /opt/nbbuild && cd /opt/nbbuild        # or wherever you keep this
+git clone https://github.com/Uttiponken/netbox-docker.git
+git clone --branch v0.7.0 https://github.com/Uttiponken/netbox-tracepath-plugin.git
 ```
 
-Then restore the four files/directories that make this deployment specific
-(pull them from **your own** git repository where you keep this runbook —
-you should have committed `Dockerfile-Plugins`, `plugin_requirements.txt`,
-`configuration/plugins.py`, `custom-plugins/`, and a copy of
-`docker-compose.override.yml`, since the last one is gitignored by upstream
-netbox-docker and will not survive a fresh clone otherwise):
+**Without git, from zip files** (GitHub: *Code → Download ZIP*; for the plugin pick the tag `v0.7.0` under
+*Releases* or *Tags*, not the branch): unzip both next to each other and **rename the folders**, because a zip unpacks
+as `netbox-docker-main` and `netbox-tracepath-plugin-0.7.0`:
 
 ```bash
-# from wherever you archived them (your own git repo, or the repo tarball from §7.3)
-cp /path/to/your/archive/Dockerfile-Plugins .
-cp /path/to/your/archive/plugin_requirements.txt .
-cp /path/to/your/archive/configuration/plugins.py configuration/plugins.py
-cp -r /path/to/your/archive/custom-plugins .
-cp /path/to/your/archive/docker-compose.override.yml .
+mkdir -p /opt/nbbuild && cd /opt/nbbuild
+unzip /path/to/netbox-docker-main.zip && mv netbox-docker-main netbox-docker
+unzip /path/to/netbox-tracepath-plugin-0.7.0.zip && mv netbox-tracepath-plugin-0.7.0 netbox-tracepath-plugin
+ls netbox-docker/Dockerfile-Plugins netbox-docker/docker-compose.offline.yml netbox-tracepath-plugin/pyproject.toml
 ```
 
-**Do not** reconstruct these by hand from memory or by copy-pasting from a
-different netbox-docker version's wiki page — that is exactly how the
-original break-everything problem happened. Use the exact files from this
-repo.
-
-Build:
+### 3.2 Settings and build
 
 ```bash
-docker compose build --no-cache netbox
+cd /opt/nbbuild/netbox-docker
+cp offline.env.example .env      # project name, port and the compose files to use (read the comments in it)
+
+# Stage 1: the base plugin image. COMPOSE_FILE here overrides the one in .env for this command only.
+COMPOSE_FILE=docker-compose.yml:docker-compose.offline.yml docker compose build --no-cache netbox 2>&1 | tee build-stage1.log
+# Stage 2: the PostGIS image on top of it, with the full chain from .env
+docker compose build --no-cache netbox 2>&1 | tee build-stage2.log
 ```
 
-**Verification — do this every time, it is the whole point:**
+**Verification: do this every time, it is the whole point.**
 
 ```bash
-docker compose build --no-cache netbox 2>&1 | grep -i "unable to load plugin"
+grep -i "unable to load plugin" build-stage1.log build-stage2.log
 ```
 
-This must print **nothing**. If it prints a line like
-`Unable to load plugin netbox_x: Plugin netbox_x requires NetBox maximum
-version Y (current: Z)`, that plugin silently failed to load — NetBox does
-not error out, it just drops it. Do not proceed until this is silent.
+This must print **nothing**. If it prints a line like `Unable to load plugin netbox_x: Plugin netbox_x requires
+NetBox maximum version Y (current: Z)`, that plugin silently failed to load: NetBox does not error out, it just
+drops it. Do not proceed until this is silent.
 
-Start the stack and wait for both `netbox` and `netbox-worker` to report
-healthy (`--wait` blocks until they do or fails after their health-check
-`start_period`):
+### 3.3 Start it
+
+A new database needs PostGIS before NetBox starts. The PostGIS image normally has created it already, so this
+command usually only says "already exists, skipping". Keep it anyway.
 
 ```bash
-docker compose up -d --wait
+docker compose up -d --wait postgres
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS postgis"'
+docker compose up -d
+```
+
+The first start applies all migrations and takes a few minutes. `docker compose up -d` may end with
+`dependency failed to start: container …-netbox-1 is unhealthy`: the health check gave up before the migrations were
+done and the worker was not started. That is harmless. Follow `docker compose logs -f netbox` until "Listening at",
+wait until `docker compose ps netbox` says healthy, then run `docker compose up -d` again. Both `netbox` and
+`netbox-worker` should then show `(healthy)`:
+
+```bash
 docker compose ps
 ```
 
-Both should show `(healthy)`. Then confirm every expected plugin actually
-registered (belt-and-braces on top of the build-time grep above):
+Confirm that every expected plugin registered (on top of the build-time grep above):
 
 ```bash
 docker compose exec -T netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py shell -c "
@@ -299,22 +324,21 @@ print(settings.PLUGINS)
 Expected output:
 
 ```
-['netbox_secrets', 'netbox_bgp', 'netbox_fms', 'netbox_example_plugin', 'netbox_inventory', 'netbox_otp_plugin', 'netbox_floorplan', 'netbox_wdm']
+['netbox_secrets', 'netbox_bgp', 'netbox_fms', 'netbox_example_plugin', 'netbox_inventory', 'netbox_otp_plugin', 'netbox_floorplan', 'netbox_wdm', 'netbox_tracepath_plugin', 'netbox_pathways']
 ```
 
-Create your admin user (interactive — run it yourself, not scripted, so the
-password never touches a log or transcript):
+Create your admin user (interactive: run it yourself, not scripted, so the password never touches a log or
+transcript):
 
 ```bash
 docker compose exec netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py createsuperuser
 ```
 
-Log in at `http://<host>:8000/` and confirm **Plugins → Plugins** in the UI
-lists all eight as Active, matching the table in §1.
+Log in at `http://<host>:8000/` (the port in `.env`) and confirm that **Plugins → Plugins** lists all ten as Active,
+matching the table in §1 (which predates the last two).
 
-If you added the custom plugin's model migrations were generated (they are
-committed under `custom-plugins/netbox-example-plugin/.../migrations/`, so
-this is only needed if you change the model):
+The example plugin's model migrations are committed under `custom-plugins/netbox-example-plugin/.../migrations/`,
+so the following is only needed if you change that model:
 
 ```bash
 docker compose exec -T -e DEVELOPER=true netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py makemigrations netbox_example_plugin

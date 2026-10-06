@@ -16,3 +16,4 @@ super-linter.log
 # Python caches
 __pycache__/
 *.pyc
+build-stage*.log
