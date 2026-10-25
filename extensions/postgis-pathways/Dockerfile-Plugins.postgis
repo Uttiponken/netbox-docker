@@ -25,7 +25,7 @@ RUN apt-get update -qq \
 # netbox-pathways pulls in djangorestframework-gis and networkx itself.
 # Alpha software (see plugin_requirements.txt comment convention) — pin
 # exact version, re-check its NetBox min/max_version before any bump.
-RUN /usr/local/bin/uv pip install netbox-pathways==0.2.2
+RUN /usr/local/bin/uv pip install netbox-pathways==0.3.0
 
 # NOTE: docker-compose.yml bind-mounts ./configuration over /etc/netbox/config
 # at RUNTIME (read-only), which shadows anything COPY'd here — so this step

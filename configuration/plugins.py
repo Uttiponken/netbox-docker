@@ -5,7 +5,6 @@
 # must be rebuilt after any change: `docker compose build --no-cache`.
 
 PLUGINS = [
-    "netbox_secrets",
     "netbox_bgp",
     "netbox_fms",
     "netbox_example_plugin",
@@ -17,9 +16,7 @@ PLUGINS = [
 ]
 
 PLUGINS_CONFIG = {
-    "netbox_secrets": {
-        # See https://github.com/netbox-community/netbox-secrets for available keys.
-    },
+    # netbox_secrets is left out until it releases NetBox 4.7 support (see plugin_requirements.txt).
     "netbox_bgp": {
         # See https://github.com/netbox-community/netbox-bgp for available keys.
     },

@@ -14,33 +14,46 @@ substitute the codename in the apt source line). The Docker prerequisites for
 > For building and installing from the repository, use §3 and `OFFLINE-REPLACE-INSTALL.md`: they use
 > `docker-compose.offline.yml` and a `.env` made from `offline.env.example` instead. Where a later section still
 > names `docker-compose.override.yml` or counts eight plugins, read it as that development setup (the deployment
-> now has ten: `netbox_tracepath_plugin` and `netbox_pathways` were added).
+> now has nine: `netbox_tracepath_plugin` and `netbox_pathways` were added, `netbox_secrets` was dropped for NetBox
+> 4.7, see §1).
 
 ---
 
 ## 1. What this deployment is
 
 A [netbox-docker](https://github.com/netbox-community/netbox-docker) based
-NetBox install, pinned to **netbox-docker release `5.0.2`** (NetBox
-**v4.6.x**), with a custom `Dockerfile-Plugins` image carrying:
+NetBox install, based on **netbox-docker release `5.1.1`** (NetBox
+**v4.7.x**; this repository's tag `v1.0.0` is the first on 4.7, before it the
+deployment ran NetBox 4.6 on release 5.0.2), with a custom `Dockerfile-Plugins`
+image carrying:
 
 | Plugin (pip package)         | App label             | Pinned version | Why this version |
 |-------------------------------|------------------------|----------------|-------------------|
-| netbox-secrets                 | `netbox_secrets`       | 3.1.1          | Latest. Hard-caps at NetBox 4.6.99 (no 4.7 release yet) — this is the constraint that fixes the whole stack to NetBox 4.6.x. |
-| netbox-bgp                     | `netbox_bgp`           | 0.19.0         | Latest is 0.20.1, but it hard-pins to NetBox 4.7.x only. 0.19.0 hard-pins to 4.6.x. |
-| netbox-fms                     | `netbox_fms`           | 0.4.1          | Latest. Alpha software; `min_version=4.5`, no max. |
-| netbox-inventory                | `netbox_inventory`     | 2.6.1          | Latest. `min_version=4.6`, no max. |
+| netbox-bgp                     | `netbox_bgp`           | 0.20.2         | Latest. Hard-pins to NetBox 4.7.x only (0.19.0 was the 4.6 release). |
+| netbox-fms                     | `netbox_fms`           | 0.6.0          | Latest. Alpha software; `min_version=4.5`, no max. 0.6.0 derives fiber paths by analysis, see §6.6. |
+| netbox-inventory                | `netbox_inventory`     | 2.7.1          | Latest. Hard-pins to NetBox 4.7 (2.6.1 was the 4.6 release). |
 | netbox-otp-plugin               | `netbox_otp_plugin`    | 1.3.6          | Latest. Supports NetBox 4.0–4.99. |
-| netbox-floorplan-plugin          | `netbox_floorplan`    | 0.9.2          | Latest is 0.10.0, but it hard-pins to NetBox 4.7.x only. 0.9.2 hard-pins to 4.6.x. |
+| netbox-floorplan-plugin          | `netbox_floorplan`    | 0.10.0         | Latest. Hard-pins to NetBox 4.7.x only (0.9.2 was the 4.6 release). |
 | netbox-wdm                      | `netbox_wdm`           | 0.2.2          | Latest. Alpha software; `min_version=4.5`, no max. Companion to netbox-fms. |
 | (your own plugin)               | `netbox_example_plugin`| 0.1.0          | Scaffold in `custom-plugins/netbox-example-plugin/`. |
+| (your own plugin)               | `netbox_tracepath_plugin`| 0.8.0        | PDF cable traces, from its own repository, see §3.1. |
+| netbox-pathways (PostGIS overlay) | `netbox_pathways`     | 0.3.0          | Latest. Declares no NetBox range; tested on 4.7.3. See §10. |
+
+**netbox-secrets is not installed.** Its released 3.1.1 declares
+`max_version = "4.6.99"`, so NetBox 4.7 refuses to load it, and no release for
+4.7 exists yet (the work is in an unmerged pull request). It was dropped from
+`plugin_requirements.txt` and both `plugins.py` files. Nothing else depends on
+it. If your database holds secrets, they stay in the `netbox_secrets_*` tables
+untouched; they are not visible or editable until the plugin is added back
+(pin the new release, add `netbox_secrets` to both `plugins.py` files, rebuild),
+and the private key of the user key is needed to read them again. Keep the
+database backup (§5) and the private key file.
 
 **The load-bearing fact of this whole deployment:** several of these plugins
 declare an *exact* NetBox major.minor they support (not a range), and the
 newest release of a plugin does not necessarily target the newest NetBox.
-`netbox-bgp` 0.20.1 and `netbox-floorplan-plugin` 0.10.0 both moved to
-NetBox 4.7 already; `netbox-secrets` has not. NetBox 4.6.x is the only
-version currently common to all eight plugins. **Any future upgrade must
+NetBox silently skips a plugin whose range does not match the running version,
+which is how netbox-secrets dropped out here. **Any future upgrade must
 re-derive this table from scratch — see §6.**
 
 Files that make this reproducible (all in this repository):
@@ -51,14 +64,14 @@ netbox-docker/
 ├── plugin_requirements.txt            # pinned third-party plugin versions
 ├── docker-compose.override.yml        # build target, port, SSO env stub (gitignored upstream — keep your own copy in version control)
 ├── configuration/
-│   ├── configuration.py               # from netbox-docker 5.0.2, unmodified
+│   ├── configuration.py               # from netbox-docker 5.1.1, unmodified
 │   └── plugins.py                     # PLUGINS + PLUGINS_CONFIG
 └── custom-plugins/
     └── netbox-example-plugin/         # your own plugin, editable-installed
 ```
 
 Everything else in the directory is the unmodified `netbox-community/netbox-docker`
-repository at tag `5.0.2` (commit `5adc62fe3fa65163c4ef63733bdcbd3e59b5c544`).
+repository at tag `5.1.1` (commit `7689fec7a70717f7e72feecb383e7a3f55538b5f`), merged into this repository.
 
 ---
 
@@ -255,17 +268,17 @@ exact name `netbox-tracepath-plugin` (the build reads `../netbox-tracepath-plugi
 ```bash
 mkdir -p /opt/nbbuild && cd /opt/nbbuild        # or wherever you keep this
 git clone https://github.com/Uttiponken/netbox-docker.git
-git clone --branch v0.7.0 https://github.com/Uttiponken/netbox-tracepath-plugin.git
+git clone --branch v0.8.0 https://github.com/Uttiponken/netbox-tracepath-plugin.git
 ```
 
-**Without git, from zip files** (GitHub: *Code → Download ZIP*; for the plugin pick the tag `v0.7.0` under
+**Without git, from zip files** (GitHub: *Code → Download ZIP*; for the plugin pick the tag `v0.8.0` under
 *Releases* or *Tags*, not the branch): unzip both next to each other and **rename the folders**, because a zip unpacks
-as `netbox-docker-main` and `netbox-tracepath-plugin-0.7.0`:
+as `netbox-docker-main` and `netbox-tracepath-plugin-0.8.0`:
 
 ```bash
 mkdir -p /opt/nbbuild && cd /opt/nbbuild
 unzip /path/to/netbox-docker-main.zip && mv netbox-docker-main netbox-docker
-unzip /path/to/netbox-tracepath-plugin-0.7.0.zip && mv netbox-tracepath-plugin-0.7.0 netbox-tracepath-plugin
+unzip /path/to/netbox-tracepath-plugin-0.8.0.zip && mv netbox-tracepath-plugin-0.8.0 netbox-tracepath-plugin
 ls netbox-docker/Dockerfile-Plugins netbox-docker/docker-compose.offline.yml netbox-tracepath-plugin/pyproject.toml
 ```
 
@@ -324,7 +337,7 @@ print(settings.PLUGINS)
 Expected output:
 
 ```
-['netbox_secrets', 'netbox_bgp', 'netbox_fms', 'netbox_example_plugin', 'netbox_inventory', 'netbox_otp_plugin', 'netbox_floorplan', 'netbox_wdm', 'netbox_tracepath_plugin', 'netbox_pathways']
+['netbox_bgp', 'netbox_fms', 'netbox_example_plugin', 'netbox_inventory', 'netbox_otp_plugin', 'netbox_floorplan', 'netbox_wdm', 'netbox_tracepath_plugin', 'netbox_pathways']
 ```
 
 Create your admin user (interactive: run it yourself, not scripted, so the password never touches a log or
@@ -334,8 +347,8 @@ transcript):
 docker compose exec netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py createsuperuser
 ```
 
-Log in at `http://<host>:8000/` (the port in `.env`) and confirm that **Plugins → Plugins** lists all ten as Active,
-matching the table in §1 (which predates the last two).
+Log in at `http://<host>:8000/` (the port in `.env`) and confirm that **Plugins → Plugins** lists all nine as Active,
+matching the table in §1.
 
 The example plugin's model migrations are committed under `custom-plugins/netbox-example-plugin/.../migrations/`,
 so the following is only needed if you change that model:
@@ -619,6 +632,28 @@ docker compose up -d --wait
 This is precisely why the staging rehearsal in §6.3 exists — to find this
 failure mode before it happens against the real database.
 
+### 6.6 Upgrade log: NetBox 4.6.10 to 4.7.3 (this repository's `v1.0.0`)
+
+Rehearsed on a restored copy of the development database before it was committed. What changed, in the order it
+matters when you upgrade a database that still runs the 4.6 stack (the installation this repository's earlier
+commits describe):
+
+1. **Back up first** (§5.2). The migrations cannot be undone.
+2. **netbox-secrets stays behind.** The new image does not load it (§1). The stored secrets remain in the database
+   and can be read again once a release supports 4.7.
+3. **52 migrations apply on first start** (NetBox 4.7, netbox-bgp, -inventory, -floorplan, -fms, -pathways). The
+   inventory asset `contact` field becomes contact assignments, and netbox-bgp makes `remote_address` nullable.
+4. **netbox-fms 0.6.0 deletes all fiber circuit path assignments** (its migration 0039) and derives fiber paths by
+   analysis instead (`FiberStrandPath`, wait about 30 s for the worker job after the first start). Assign the
+   circuits to the derived paths again with `POST /api/plugins/fms/fiber-circuits/<id>/assign/` and the body
+   `{"strand_paths": [<ids>]}`, or run `reconcile_fiber_paths`. Loss and wavelength sit on the assignment now.
+   Unlanded spare strands appear as informational `dangling_reference` path anomalies.
+5. **netbox-pathways 0.3.0**: a structure's map point is the field `geometry` (`location` is now a link to a NetBox
+   Location), and an innerduct's `color` is a hex code. The Pathways list page (`/plugins/pathways/pathways/`)
+   returns a server error on NetBox 4.7; every other page works.
+6. **API tokens keep working** (same `API_TOKEN_PEPPER_1`). A new image reads the health check from
+   `/opt/netbox/health.sh`, so use the whole 5.1.1 compose file, never a mix (§6.1 step 4).
+
 ---
 
 ## 7. Air-gapped deployment: build, transfer, install
@@ -854,8 +889,10 @@ sheets. It's designed for exactly the "outside plant" documentation problem
 describe what's inside a cable and which wavelengths are lit; pathways
 describes where the cable physically runs.
 
-Version 0.2.2+ declares support for NetBox 4.5.3–4.6.x, so it fits the
-current pin.
+Version 0.2.2 declared support for NetBox 4.5.3–4.6.x; 0.3.0 (the pin
+now, for NetBox 4.7) declares no range and was tested on 4.7.3. It needs
+PostGIS, and its structure map point moved from `location` to `geometry` in
+0.3.0, which the sample data follows.
 
 **This is now built, tested, and available as an optional extension** — see
 **§10**. It is not merged into the base deployment (§1–§8): it requires a
@@ -875,17 +912,10 @@ draws a topology diagram from your existing cable connections (with
 draw.io/PNG export). This is the closest thing to a generic "visualize the
 network" plugin, and is likely what you were searching for.
 
-**Caveat**: its own compatibility table jumps straight from `v4.5.1` (for
-NetBox 4.5.x) to `v4.7.0` (for NetBox 4.7.x only) — **there is no release
-that officially targets NetBox 4.6.x**, which is what this deployment runs.
-`v4.5.1` doesn't hard-enforce a `max_version` in code, so it would probably
-*load* on 4.6 without a warning, but the author's own README explicitly
-says "if the version of netbox is not listed here the plugin will most
-likely not work" — i.e., untested, silent-risk territory, exactly the kind
-of thing this runbook's whole discipline exists to avoid. I'd want to
-actually test it against a throwaway copy of the stack before trusting it,
-or wait for a 4.6-targeted (or 4.7, if you're open to eventually moving the
-whole stack there) release.
+**Caveat**: its own compatibility table jumped from `v4.5.1` (NetBox 4.5.x)
+to `v4.7.0` (NetBox 4.7.x only), with no release for 4.6. The stack now runs
+NetBox 4.7, so `v4.7.0` matches, but it has not been added or tested here.
+Try it on a throwaway copy of the stack (§6.3) before adding it.
 
 ### 9.3 What you already have covering part of this
 
@@ -899,11 +929,8 @@ to general L1 device topology), you likely already have more than
 **My recommendation, in order:** if geographic/outside-plant documentation
 of your fiber and leased circuits is the priority, `netbox-pathways` is the
 better fit for what you described and is worth the PostGIS investment.
-`netbox-topology-views` is lower-value right now given the untested 4.6 gap,
-and worth revisiting either when it ships a 4.6-targeted release or if you
-decide to move the whole stack to NetBox 4.7 later (which would also let you
-take `netbox-bgp` 0.20.1 and `netbox-floorplan-plugin` 0.10.0 — but only
-once `netbox-secrets` ships 4.7 support, or you decide to drop it).
+`netbox-topology-views` is lower-value right now and worth a trial on a
+throwaway copy of the 4.7 stack.
 
 ---
 
@@ -911,7 +938,7 @@ once `netbox-secrets` ships 4.7 support, or you decide to drop it).
 
 **Status: built and verified end-to-end**, kept as a separate, opt-in overlay
 — not merged into the base deployment (§1–§8). Adopt it or don't; it does
-not change anything about the base 8 plugins or the base build/upgrade/
+not change anything about the base plugins or the base build/upgrade/
 backup procedures if you leave it alone.
 
 ### 10.1 Why this is a separate overlay, not a `plugin_requirements.txt` line
@@ -943,7 +970,7 @@ extensions/postgis-pathways/
     ├── configuration.py            # unmodified copy of the base file
     ├── logging.py                  # unmodified copy of the base file
     ├── extra.py                    # DATABASES ENGINE -> postgis
-    └── plugins.py                  # base 8 plugins + netbox_pathways, with srid config
+    └── plugins.py                  # base plugins + netbox_pathways, with srid config
 ```
 
 **Why a full parallel `configuration/` directory, not just an `extra.py`
@@ -1197,6 +1224,6 @@ adds three more axes that a "just upgrade netbox-docker" mindset will miss:
 adopted, step 1 of §6.1 ("decide the target NetBox version") gains a
 follow-on question — "is there a PostGIS image and a netbox-pathways
 release compatible with that target?" — before you proceed to checking the
-other 8 plugins. Don't upgrade the base stack and this extension in the
-same change; upgrade and verify the base 8 plugins first (§6), then treat
+other plugins. Don't upgrade the base stack and this extension in the
+same change; upgrade and verify the base plugins first (§6), then treat
 this extension's upgrade as its own separate staging exercise on top.

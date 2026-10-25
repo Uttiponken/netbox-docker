@@ -9,7 +9,7 @@ class ExamplePluginConfig(PluginConfig):
     version = "0.1.0"
     base_url = "example-plugin"
     min_version = "4.6.0"
-    max_version = "4.6.99"
+    max_version = "4.7.99"
 
 
 config = ExamplePluginConfig

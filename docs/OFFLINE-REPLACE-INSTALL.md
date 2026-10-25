@@ -1,6 +1,6 @@
 # Build with all plugins on an online host, replace an existing netbox-docker on an offline host, keep the data
 
-This guide builds this repository (NetBox 4.6 + the plugins in `plugin_requirements.txt` + the example plugin +
+This guide builds this repository (NetBox 4.7 + the plugins in `plugin_requirements.txt` + the example plugin +
 **netbox-tracepath-plugin** + PostGIS/netbox-pathways) on an internet-connected Linux host, carries the result into an
 air-gapped Linux host, and replaces an **older netbox-docker installation** there **without losing its data**.
 It also takes a verified backup of the old installation first.
@@ -21,8 +21,8 @@ It complements `OPERATIONS.md` (§5 backups, §6 upgrades, §7 air-gapped deploy
                                                                    G  roll back, or clean up later
 ```
 
-**What is built.** One image, `netbox:latest-plugins-postgis`, with NetBox v4.6 (netbox-docker release 5.0.2) and
-these plugins baked in: netbox-secrets, netbox-bgp, netbox-fms, netbox-inventory, netbox-otp-plugin,
+**What is built.** One image, `netbox:latest-plugins-postgis`, with NetBox v4.7 (netbox-docker release 5.1.1) and
+these plugins baked in: netbox-bgp, netbox-fms, netbox-inventory, netbox-otp-plugin,
 netbox-floorplan-plugin, netbox-wdm, netbox-pathways, the example plugin and **netbox-tracepath-plugin**. Two more
 images are pulled as they are: `postgis/postgis:18-3.6-alpine` (the database) and `valkey/valkey:9.1-alpine`
 (Redis). About 2.3 GB before compression.
@@ -46,7 +46,7 @@ images are pulled as they are: `postgis/postgis:18-3.6-alpine` (the database) an
 
 **What was tested** (on the development machine, with this repository's own data): the offline overlay builds; the
 backup commands; a restore into a brand-new PostGIS database with every row count identical; the file volumes
-restored from their archives; the plugins, including netbox-tracepath-plugin 0.7.0 from inside the image, load and
+restored from their archives; the plugins, including netbox-tracepath-plugin 0.8.0 from inside the image, load and
 print a PDF with no source tree mounted. **Not tested:** upgrading a database from an older NetBox version, because
 that needs your data. Step E exists for that: it does the upgrade on a copy so a problem shows up before anything
 is replaced.
@@ -72,18 +72,18 @@ df -h /var/lib/docker
 ```bash
 mkdir -p ~/nbbuild && cd ~/nbbuild
 git clone https://github.com/Uttiponken/netbox-docker.git
-git clone --branch v0.7.0 https://github.com/Uttiponken/netbox-tracepath-plugin.git
+git clone --branch v0.8.0 https://github.com/Uttiponken/netbox-tracepath-plugin.git
 ls netbox-docker/docker-compose.offline.yml netbox-docker/offline.env.example   # both must exist
 ```
 
 **Without git, from zip files:** download both from GitHub (*Code → Download ZIP*; for the plugin take the tag
-`v0.7.0` from *Releases*), unzip them next to each other and rename the folders, because a zip unpacks as
-`netbox-docker-main` and `netbox-tracepath-plugin-0.7.0`:
+`v0.8.0` from *Releases*), unzip them next to each other and rename the folders, because a zip unpacks as
+`netbox-docker-main` and `netbox-tracepath-plugin-0.8.0`:
 
 ```bash
 mkdir -p ~/nbbuild && cd ~/nbbuild
 unzip /path/to/netbox-docker-main.zip && mv netbox-docker-main netbox-docker
-unzip /path/to/netbox-tracepath-plugin-0.7.0.zip && mv netbox-tracepath-plugin-0.7.0 netbox-tracepath-plugin
+unzip /path/to/netbox-tracepath-plugin-0.8.0.zip && mv netbox-tracepath-plugin-0.8.0 netbox-tracepath-plugin
 ```
 
 A zip has no git history, so the two `git` commands below that record the version do not work; write the
@@ -229,7 +229,9 @@ How to read it:
 | What you found | What it means |
 |---|---|
 | PostgreSQL major **is not 18** | Normal. That is why the data moves as a dump, never as a volume. |
-| NetBox is **4.6.x** | The simple case. The new image starts on the restored data. |
+| NetBox is **4.7.x** | The simple case. The new image starts on the restored data. |
+| NetBox is **4.6.x** | One minor step. The new container runs the 4.7 migrations on first start, and netbox-fms 0.6.0 deletes all fiber circuit path assignments: read `OPERATIONS.md` §6.6 and rehearse in step E. |
+| The app `netbox_secrets` is in `django_migrations` | The new image does not carry netbox-secrets (no NetBox 4.7 release yet). The secrets stay in the database, unreadable until the plugin is added back; keep the backup and the user key's private key. |
 | NetBox is an **older 4.x** | The new container runs all newer migrations on first start (`migrate`, `trace_paths`, `reindex`), which is why you rehearse in step E. Read the NetBox release notes for every version in between. |
 | NetBox is **3.x** | Stop and ask for an upgrade path first: NetBox 4.0 had requirements on the version you upgrade from. |
 | The app `netbox_trace_print` is in `django_migrations` | The old installation already ran this plugin under its earlier name (≤ 0.6.2). Rename its tables once, **before** F9: README of netbox-tracepath-plugin, "Upgrading from netbox-trace-print". |
