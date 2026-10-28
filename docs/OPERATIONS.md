@@ -1,7 +1,8 @@
 # NetBox Docker Deployment — Operations Runbook
 
 Status: living document. Update the version tables whenever a plugin or NetBox
-version changes.
+version changes. What comes next, and which plugins wait for a release, is in
+`ROADMAP.md`.
 
 Last verified: 2026-09-26, on netbox-docker `docker compose` (Docker Engine
 24.0.2 / Compose v2.19.0). Target execution/staging OS for this runbook:
