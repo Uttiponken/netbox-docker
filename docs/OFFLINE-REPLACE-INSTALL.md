@@ -21,7 +21,8 @@ It complements `OPERATIONS.md` (§5 backups, §6 upgrades, §7 air-gapped deploy
                                                                    G  roll back, or clean up later
 ```
 
-**What is built.** One image, `netbox:latest-plugins-postgis`, with NetBox v4.7 (netbox-docker release 5.1.1) and
+**What is built.** One image, `netbox:latest-plugins-postgis`, with NetBox 4.7.4 (netbox-docker release 5.1.1; the
+base image is pinned by digest in `Dockerfile-Plugins`, so every build starts from the same image) and
 these plugins baked in: netbox-bgp, netbox-fms, netbox-inventory, netbox-otp-plugin,
 netbox-floorplan-plugin, netbox-wdm, netbox-pathways, netbox-plugin-dns, netbox-notices, netbox-cable-labels,
 netbox-topology-views, the example plugin and **netbox-tracepath-plugin**. Two more

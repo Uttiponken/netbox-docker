@@ -26,7 +26,8 @@ A [netbox-docker](https://github.com/netbox-community/netbox-docker) based
 NetBox install, based on **netbox-docker release `5.1.1`** (NetBox
 **v4.7.x**; this repository's tag `v1.0.0` is the first on 4.7, before it the
 deployment ran NetBox 4.6 on release 5.0.2), with a custom `Dockerfile-Plugins`
-image carrying:
+image built on NetBox **4.7.4** (`netboxcommunity/netbox:v4.7.4-5.1.1`, pinned by
+digest so every build starts from the same image, see §6.3), carrying:
 
 | Plugin (pip package)         | App label             | Pinned version | Why this version |
 |-------------------------------|------------------------|----------------|-------------------|
@@ -612,6 +613,17 @@ git checkout <new-netbox-docker-tag>            # whole tag, per §6.1 step 4
 # re-apply configuration/plugins.py, Dockerfile-Plugins content as needed —
 # Dockerfile-Plugins' FROM line must point at the new tag's default image tag
 ```
+
+`Dockerfile-Plugins` pins the base image by digest, because the netbox-docker tags move: `v4.7-5.1.1` follows every
+NetBox 4.7.x patch, and even a patch tag such as `v4.7.4-5.1.1` is republished when upstream rebuilds it. Use the
+exact patch tag (`v<netbox>-<netbox-docker>`) and look up its digest on the build host:
+
+```bash
+docker buildx imagetools inspect docker.io/netboxcommunity/netbox:v4.7.4-5.1.1 | grep -m1 '^Digest:'
+# FROM docker.io/netboxcommunity/netbox:v4.7.4-5.1.1@sha256:<that digest>
+```
+
+With a digest, Docker fetches exactly that image when it is not on the host yet; no `--pull` is needed.
 
 Update `plugin_requirements.txt` with the versions selected in §6.1 step 2.
 Update `configuration/plugins.py` if any plugin's config keys changed

@@ -17,6 +17,9 @@ carrying and installing offline is in `OFFLINE-REPLACE-INSTALL.md`. The sample d
 - **v1.1.0 (2026-10-28).** netbox-dns (pip package netbox-plugin-dns), netbox-notices, netbox-cable-labels and
   netbox-topology-views. Checked with a full build and start, the sample data's build and `verify.py`, and the
   netbox-tracepath-plugin smoke test. netbox-documents and netbox-routing were tested too and left out (below).
+- **v1.1.1 (2026-10-28): NetBox 4.7.4, base image pinned by digest.** The netbox-docker tags move (`v4.7-5.1.1`
+  switched from NetBox 4.7.3 to 4.7.4 on 2026-10-28), so a build on a new host could get a NetBox nobody tested.
+  `Dockerfile-Plugins` now names the exact image by its digest.
 
 ## Next
 
@@ -64,7 +67,11 @@ netbox-bgp stays until netbox-routing has a stable release. Then, in one change:
 ## Recurring
 
 - **A new netbox-docker or NetBox release:** merge upstream, then work out the plugin table again (`OPERATIONS.md`
-  §6). Several plugins accept exactly one NetBox minor version.
+  §6). Several plugins accept exactly one NetBox minor version. Move the digest in `Dockerfile-Plugins` to the new
+  image only after it has been tested.
+- **The other images still follow moving tags:** `postgis/postgis:18-3.6-alpine` and `valkey/valkey:9.1-alpine` are
+  pulled when the bundle is built. The offline host gets exactly what was bundled, but two builds can differ.
+  Pinning them by digest as well is open.
 - **Every plugin change:** follow `OPERATIONS.md` §4, change both `plugins.py` files, build, start until healthy, run
   the sample data's build and `verify.py` and the tracepath smoke test, and check that the plugin loads nothing from
   the internet (the production host has none).

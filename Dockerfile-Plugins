@@ -1,4 +1,7 @@
-FROM docker.io/netboxcommunity/netbox:v4.7-5.1.1
+# Pinned by digest, because the netbox-docker tags move: v4.7-5.1.1 follows every NetBox 4.7.x patch, and even a
+# patch tag like v4.7.4-5.1.1 is republished when upstream rebuilds it. The tag in front of the digest is only
+# for reading. To move to another release, see docs/OPERATIONS.md §6.
+FROM docker.io/netboxcommunity/netbox:v4.7.4-5.1.1@sha256:c75a7dcfe61dadd4e009c9b5d9118a33bec991f4359c0db18ac7f287b5980246
 
 # All third-party plugins are pinned together in one file and resolved in a
 # single `uv pip install`. VIRTUAL_ENV is already set by the base image, so
