@@ -473,6 +473,11 @@ plugin at a time:
    docker compose ps
    ```
 
+   The build also stops if the new plugin's templates load a script or
+   stylesheet from the internet, which would not work on the air-gapped host:
+   serve it from the image the way `Dockerfile-Plugins` does for D3 (§6.1
+   step 6), or leave the plugin out.
+
    A plugin can pass step 6 and still stop NetBox from starting, for example
    with a GraphQL type name another plugin already uses (§1, §3.3). If
    `netbox` does not become healthy, read its log before anything else.
@@ -595,6 +600,20 @@ compatibility check in §1 for every installed plugin. This is not optional
 5. Read the NetBox release notes for the target version for breaking
    changes (settings renames, deprecated flags — e.g. `LOGIN_REQUIRED` is
    deprecated as of 4.7 and slated for removal in 5.0).
+6. **Offline browser assets.** netbox-fms and netbox-wdm load D3 from a CDN;
+   `Dockerfile-Plugins` serves a pinned copy (7.9.0, checked by SHA-256) from
+   NetBox's static files instead, so their diagrams work on the air-gapped
+   host. On every upgrade, and whenever one of the two plugins is bumped:
+   - check for a newer D3 7.x (`https://registry.npmjs.org/d3`, the plugins
+     ask for `d3@7`); if there is one, change the version in both URLs and both
+     checksums in `Dockerfile-Plugins`;
+   - read the two plugins' changelogs: once they bundle D3 themselves, or move
+     to D3 8, their script tags change and the build stops with "no longer load
+     D3 from a CDN". Drop the block, or adjust it to the new tags;
+   - after any change, open the WDM circuit trace and the FMS fiber circuit
+     path on a host without internet and check that the diagrams draw.
+   The same build step stops if any plugin template loads a script or
+   stylesheet from the internet.
 
 ### 6.2 Take a backup
 

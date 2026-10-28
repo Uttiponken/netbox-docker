@@ -63,7 +63,8 @@ netbox-floorplan-plugin==0.10.0
 # netbox-sampledata needs 0.8.2 or later (0.8.1 cannot build on it). It also rejects invalid
 # WDM cabling at save time and adds the optional setting max_trace_hops
 # (default 20). Like 0.2.2, its channel and circuit trace tabs load D3 from
-# d3js.org, so those diagrams stay empty on the air-gapped host.
+# d3js.org (netbox-fms from cdn.jsdelivr.net); Dockerfile-Plugins serves a
+# pinned copy from NetBox's own static files instead, so they work offline.
 netbox-wdm==0.3.0
 
 # DNS zones, records, views and DNSSEC policies. The pip package is

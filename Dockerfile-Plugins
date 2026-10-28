@@ -19,6 +19,39 @@ RUN /usr/local/bin/uv pip install -e /opt/netbox/custom-plugins/netbox-example-p
 COPY --from=tracepath . /opt/netbox/custom-plugins/netbox-tracepath-plugin
 RUN /usr/local/bin/uv pip install -e /opt/netbox/custom-plugins/netbox-tracepath-plugin
 
+# netbox-fms and netbox-wdm load D3 from a CDN (d3js.org, cdn.jsdelivr.net) without a pinned version or an
+# integrity check, so their diagrams and the FMS splice editor stop working on a host without internet, and the
+# browser would run whatever the CDN returns. Serve one pinned, checksummed copy from NetBox's own static files and
+# point their script tags at it. The build stops if a plugin upgrade changes those tags, or if any plugin template
+# still loads a script or stylesheet from the internet. The files go straight into STATIC_ROOT, which collectstatic
+# (here and in the PostGIS stage, never with --clear) leaves alone; NetBox 4.7 collects only some project-static
+# subfolders. Keep it current (docs/OPERATIONS.md §6.1): for a newer D3 7.x, change the version in both URLs and
+# both checksums and test the pages offline; once both plugins bundle D3 themselves (the build then stops below),
+# drop this block.
+ADD --checksum=sha256:f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539 \
+    https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js /tmp/d3/d3.min.js
+ADD --checksum=sha256:3e6849627f74ff73c257a3ae1efb574015d94fc1035c05ec3c15805165efcbc4 \
+    https://cdn.jsdelivr.net/npm/d3@7.9.0/LICENSE /tmp/d3/LICENSE
+RUN <<'EOF'
+set -eu
+install -D -m 644 -t /opt/netbox/netbox/static/vendor/d3 /tmp/d3/d3.min.js /tmp/d3/LICENSE
+rm -rf /tmp/d3
+site=$(echo /opt/netbox/venv/lib/python3*/site-packages)
+cdn='https://(d3js\.org/d3\.v7\.min\.js|cdn\.jsdelivr\.net/npm/d3@7/dist/d3\.min\.js)'
+files=$(grep -rlE "$cdn" --include='*.html' "$site/netbox_fms" "$site/netbox_wdm" || true)
+if [ -z "$files" ]; then
+  echo "netbox-fms/netbox-wdm no longer load D3 from a CDN; check how they load it now before shipping" >&2
+  exit 1
+fi
+sed -i -E "s#<script src=\"$cdn\"></script>#<script src=\"{% static 'vendor/d3/d3.min.js' %}\"></script>#" $files
+echo "D3 served locally in: $(grep -lr "vendor/d3/d3.min.js" $files | sed "s#$site/##" | tr '\n' ' ')"
+if grep -rnE '<(script|link)[^>]+(src|href)="(https?:)?//' --include='*.html' \
+     "$site"/netbox_* "$site"/notices /opt/netbox/custom-plugins; then
+  echo "a plugin template above loads a script or stylesheet from the internet" >&2
+  exit 1
+fi
+EOF
+
 COPY configuration/configuration.py /etc/netbox/config/configuration.py
 COPY configuration/plugins.py /etc/netbox/config/plugins.py
 

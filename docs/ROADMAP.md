@@ -25,6 +25,12 @@ carrying and installing offline is in `OFFLINE-REPLACE-INSTALL.md`. The sample d
   installed version knows; 0.8.1 cannot build on it. Tested on NetBox 4.7.4: an upgrade from 0.2.2 with the sample
   data loaded and an empty database, `verify.py` 70/0 and an unchanged second run on both, the tracepath smoke and
   acceptance tests.
+- **v1.2.1 (2026-10-28): D3 served from the image.** netbox-fms and netbox-wdm loaded D3 from a CDN, unpinned and
+  unchecked, so their diagrams and the FMS splice editor did not work without internet. `Dockerfile-Plugins` now
+  serves D3 7.9.0 (checked by SHA-256) from NetBox's static files and points their five script tags at it; the build
+  stops if those tags change or if any plugin template loads a script or stylesheet from the internet. Checked in
+  Chromium on a Docker network without internet, with a copy of the dev data: the WDM circuit and channel traces and
+  the FMS fiber circuit path draw and the FMS device splice editor loads; with the previous image they stay empty.
 
 ## Next
 
@@ -53,9 +59,9 @@ carrying and installing offline is in `OFFLINE-REPLACE-INSTALL.md`. The sample d
      features themselves still draw). Its `map_tiles` and `map_base_layers` settings can point at a tile server on
      the internal network, or the base layer can be left out.
 
-   The D3 scripts could be bundled into the image at build time (a pinned file, served from NetBox's static files,
-   with the plugins' templates pointed at it), or reported upstream so the plugins bundle it themselves. To decide;
-   until then, `OFFLINE-REPLACE-INSTALL.md` and `OPERATIONS.md` §7 should list these limits.
+   D3 is solved in the image since v1.2.1 (see Done). Still to do: report it upstream so both plugins bundle D3; the
+   pathways map tiles (a tile server on the internal network, or no base layer); and the guides should list what
+   still needs the internet.
 
 ## Waiting for a release upstream
 
@@ -88,6 +94,10 @@ netbox-bgp stays until netbox-routing has a stable release. Then, in one change:
 - **The other images still follow moving tags:** `postgis/postgis:18-3.6-alpine` and `valkey/valkey:9.1-alpine` are
   pulled when the bundle is built. The offline host gets exactly what was bundled, but two builds can differ.
   Pinning them by digest as well is open.
+- **D3 for netbox-fms and netbox-wdm (since v1.2.1):** on every upgrade and every bump of either plugin, check for a
+  newer D3 7.x and the plugins' changelogs (`OPERATIONS.md` §6.1 step 6). Update the pinned version and checksums
+  when D3 moves; drop the block in `Dockerfile-Plugins` once both plugins bundle D3 themselves (the build stops when
+  they stop using the CDN). Test the diagrams on a host without internet after any change.
 - **Every plugin change:** follow `OPERATIONS.md` §4, change both `plugins.py` files, build, start until healthy, run
   the sample data's build and `verify.py` and the tracepath smoke test, and check that the plugin loads nothing from
   the internet (the production host has none).
