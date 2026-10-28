@@ -36,7 +36,7 @@ digest so every build starts from the same image, see §6.3), carrying:
 | netbox-inventory                | `netbox_inventory`     | 2.7.1          | Latest. Hard-pins to NetBox 4.7 (2.6.1 was the 4.6 release). |
 | netbox-otp-plugin               | `netbox_otp_plugin`    | 1.3.6          | Latest. Supports NetBox 4.0–4.99. |
 | netbox-floorplan-plugin          | `netbox_floorplan`    | 0.10.0         | Latest. Hard-pins to NetBox 4.7.x only (0.9.2 was the 4.6 release). |
-| netbox-wdm                      | `netbox_wdm`           | 0.2.2          | Latest. Alpha software; `min_version=4.5`, no max. Companion to netbox-fms. |
+| netbox-wdm                      | `netbox_wdm`           | 0.3.0          | Latest. Alpha software; `min_version=4.7.0`, no max. Companion to netbox-fms. Renames the C-band grid keys (migration 0012 rewrites stored rows; clients must send `dwdm_c_100ghz`). |
 | (your own plugin)               | `netbox_example_plugin`| 0.1.0          | Scaffold in `custom-plugins/netbox-example-plugin/`. |
 | (your own plugin)               | `netbox_tracepath_plugin`| 0.8.0        | PDF cable traces, from its own repository, see §3.1. |
 | netbox-pathways (PostGIS overlay) | `netbox_pathways`     | 0.3.0          | Latest. Declares no NetBox range; tested on 4.7.3. See §10. |

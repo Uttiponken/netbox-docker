@@ -20,6 +20,11 @@ carrying and installing offline is in `OFFLINE-REPLACE-INSTALL.md`. The sample d
 - **v1.1.1 (2026-10-28): NetBox 4.7.4, base image pinned by digest.** The netbox-docker tags move (`v4.7-5.1.1`
   switched from NetBox 4.7.3 to 4.7.4 on 2026-10-28), so a build on a new host could get a NetBox nobody tested.
   `Dockerfile-Plugins` now names the exact image by its digest.
+- **v1.2.0 (2026-10-28): netbox-wdm 0.3.0.** 0.3.0 renames the C-band grid keys (its migration rewrites stored rows)
+  and refuses invalid WDM cabling at save time. Needs netbox-sampledata 0.8.2 or later, which writes the key the
+  installed version knows; 0.8.1 cannot build on it. Tested on NetBox 4.7.4: an upgrade from 0.2.2 with the sample
+  data loaded and an empty database, `verify.py` 70/0 and an unchanged second run on both, the tracepath smoke and
+  acceptance tests.
 
 ## Next
 
@@ -40,6 +45,17 @@ carrying and installing offline is in `OFFLINE-REPLACE-INSTALL.md`. The sample d
      "Last verified" line is from 2026-09-26.
 2. **Replace the air-gapped production installation** with `OFFLINE-REPLACE-INSTALL.md`. Not recorded as done; when
    it is, note the date and the version here.
+3. **Parts of three plugins need the internet in the browser.** Found 2026-10-28 by scanning every plugin in the
+   image; the guides do not say so yet. On the air-gapped host these stay empty:
+   - netbox-wdm: the channel and circuit trace diagrams (D3 from `d3js.org`);
+   - netbox-fms: the fiber path and splice diagrams (D3 from `cdn.jsdelivr.net`);
+   - netbox-pathways: the map background (tiles from `tile.openstreetmap.org` and `server.arcgisonline.com`; the
+     features themselves still draw). Its `map_tiles` and `map_base_layers` settings can point at a tile server on
+     the internal network, or the base layer can be left out.
+
+   The D3 scripts could be bundled into the image at build time (a pinned file, served from NetBox's static files,
+   with the plugins' templates pointed at it), or reported upstream so the plugins bundle it themselves. To decide;
+   until then, `OFFLINE-REPLACE-INSTALL.md` and `OPERATIONS.md` §7 should list these limits.
 
 ## Waiting for a release upstream
 
