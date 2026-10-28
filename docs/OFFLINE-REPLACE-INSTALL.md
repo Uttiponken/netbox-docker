@@ -23,7 +23,8 @@ It complements `OPERATIONS.md` (§5 backups, §6 upgrades, §7 air-gapped deploy
 
 **What is built.** One image, `netbox:latest-plugins-postgis`, with NetBox v4.7 (netbox-docker release 5.1.1) and
 these plugins baked in: netbox-bgp, netbox-fms, netbox-inventory, netbox-otp-plugin,
-netbox-floorplan-plugin, netbox-wdm, netbox-pathways, the example plugin and **netbox-tracepath-plugin**. Two more
+netbox-floorplan-plugin, netbox-wdm, netbox-pathways, netbox-plugin-dns, netbox-notices, netbox-cable-labels,
+netbox-topology-views, the example plugin and **netbox-tracepath-plugin**. Two more
 images are pulled as they are: `postgis/postgis:18-3.6-alpine` (the database) and `valkey/valkey:9.1-alpine`
 (Redis). About 2.3 GB before compression.
 

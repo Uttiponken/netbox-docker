@@ -14,8 +14,8 @@ substitute the codename in the apt source line). The Docker prerequisites for
 > For building and installing from the repository, use §3 and `OFFLINE-REPLACE-INSTALL.md`: they use
 > `docker-compose.offline.yml` and a `.env` made from `offline.env.example` instead. Where a later section still
 > names `docker-compose.override.yml` or counts eight plugins, read it as that development setup (the deployment
-> now has nine: `netbox_tracepath_plugin` and `netbox_pathways` were added, `netbox_secrets` was dropped for NetBox
-> 4.7, see §1).
+> now has thirteen: `netbox_tracepath_plugin`, `netbox_pathways`, `netbox_dns`, `notices`, `netbox_cable_labels`
+> and `netbox_topology_views` were added, `netbox_secrets` was dropped for NetBox 4.7, see §1).
 
 ---
 
@@ -38,6 +38,10 @@ image carrying:
 | (your own plugin)               | `netbox_example_plugin`| 0.1.0          | Scaffold in `custom-plugins/netbox-example-plugin/`. |
 | (your own plugin)               | `netbox_tracepath_plugin`| 0.8.0        | PDF cable traces, from its own repository, see §3.1. |
 | netbox-pathways (PostGIS overlay) | `netbox_pathways`     | 0.3.0          | Latest. Declares no NetBox range; tested on 4.7.3. See §10. |
+| netbox-plugin-dns               | `netbox_dns`           | 1.7.3          | Latest. The 1.7.x line is `min_version=4.7.0` (1.6.x is for 4.5/4.6). Not the abandoned PyPI package `netbox-dns`. |
+| netbox-notices                  | `notices`              | 1.3.0          | Latest. `min_version=4.5`, no max. Maintenance/outage calendar and iCal feed; FullCalendar is bundled. |
+| netbox-cable-labels             | `netbox_cable_labels`  | 0.1.0          | Only release. 4.2–4.99.99. Labels unlabelled cables `#<pk>`; that write bypasses the change log. |
+| netbox-topology-views           | `netbox_topology_views`| 5.0.0          | Latest. `min_version=4.7.0`. Fixes XSS issues in 4.7.0; saving positions needs add/change on the coordinate models. |
 
 **netbox-secrets is not installed.** Its released 3.1.1 declares
 `max_version = "4.6.99"`, so NetBox 4.7 refuses to load it, and no release for
@@ -48,6 +52,24 @@ untouched; they are not visible or editable until the plugin is added back
 (pin the new release, add `netbox_secrets` to both `plugins.py` files, rebuild),
 and the private key of the user key is needed to read them again. Keep the
 database backup (§5) and the private key file.
+
+**netbox-documents is wanted but not installed yet.** Its 0.8.5 declares no
+`max_version`, so NetBox 4.7 loads it, but the Documents list page fails with
+`AttributeError: 'str' object has no attribute 'permissions_required'` (4.7
+removed the dict form of view `actions`) and the documents panel never renders
+on objects with the default configuration. The fix is an unmerged pull request
+(#112 upstream). Add it back the same way as netbox-secrets once a release works
+on 4.7.
+
+**netbox-routing cannot run next to netbox-bgp.** Both define the GraphQL types
+`CommunityType`, `CommunityListType` and `PrefixListType`; with both in
+`PLUGINS`, NetBox exits at startup with `DuplicatedTypeName: Type CommunityType
+is defined multiple times in the schema`. The image builds without complaint, so
+only the start check in §3.3 catches this. Tested on 4.7.3 with netbox-routing
+0.5.1: alone it works. The plan is to replace netbox-bgp with netbox-routing
+once netbox-routing has a stable release, and to rebuild the sample dataset for
+it at the same time; the `netbox_bgp_*` tables then stay in the database
+untouched.
 
 **The load-bearing fact of this whole deployment:** several of these plugins
 declare an *exact* NetBox major.minor they support (not a range), and the
@@ -304,6 +326,10 @@ This must print **nothing**. If it prints a line like `Unable to load plugin net
 NetBox maximum version Y (current: Z)`, that plugin silently failed to load: NetBox does not error out, it just
 drops it. Do not proceed until this is silent.
 
+A silent grep does not prove that NetBox starts. Two plugins that each load fine can still break NetBox together
+(netbox-bgp and netbox-routing define GraphQL types with the same names, see §1); that only shows when the image is
+started, so the start check in §3.3 is part of the verification, not optional.
+
 ### 3.3 Start it
 
 A new database needs PostGIS before NetBox starts. The PostGIS image normally has created it already, so this
@@ -325,6 +351,17 @@ wait until `docker compose ps netbox` says healthy, then run `docker compose up 
 docker compose ps
 ```
 
+If `netbox` instead exits, or keeps restarting with "Waiting on DB...", look for a Python error in the log; it is
+usually a plugin, not the database:
+
+```bash
+docker compose logs netbox | grep -iE "Error|Exception" | sort | uniq -c
+```
+
+`DuplicatedTypeName: Type X is defined multiple times in the schema` means two plugins define a GraphQL type with
+the same name (§1). Take one of them out of `PLUGINS` in the `plugins.py` that is mounted (the PostGIS one when the
+PostGIS overlay is in the chain) and restart.
+
 Confirm that every expected plugin registered (on top of the build-time grep above):
 
 ```bash
@@ -337,7 +374,7 @@ print(settings.PLUGINS)
 Expected output:
 
 ```
-['netbox_bgp', 'netbox_fms', 'netbox_example_plugin', 'netbox_inventory', 'netbox_otp_plugin', 'netbox_floorplan', 'netbox_wdm', 'netbox_tracepath_plugin', 'netbox_pathways']
+['netbox_bgp', 'netbox_fms', 'netbox_example_plugin', 'netbox_inventory', 'netbox_otp_plugin', 'netbox_floorplan', 'netbox_wdm', 'netbox_tracepath_plugin', 'netbox_pathways', 'netbox_dns', 'notices', 'netbox_cable_labels', 'netbox_topology_views']
 ```
 
 Create your admin user (interactive: run it yourself, not scripted, so the password never touches a log or
@@ -347,7 +384,7 @@ transcript):
 docker compose exec netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py createsuperuser
 ```
 
-Log in at `http://<host>:8000/` (the port in `.env`) and confirm that **Plugins → Plugins** lists all nine as Active,
+Log in at `http://<host>:8000/` (the port in `.env`) and confirm that **Plugins → Plugins** lists all thirteen as Active,
 matching the table in §1.
 
 The example plugin's model migrations are committed under `custom-plugins/netbox-example-plugin/.../migrations/`,
@@ -433,6 +470,10 @@ plugin at a time:
    docker compose up -d --wait
    docker compose ps
    ```
+
+   A plugin can pass step 6 and still stop NetBox from starting, for example
+   with a GraphQL type name another plugin already uses (§1, §3.3). If
+   `netbox` does not become healthy, read its log before anything else.
 
 8. Apply migrations (usually automatic on container start, but confirm):
 

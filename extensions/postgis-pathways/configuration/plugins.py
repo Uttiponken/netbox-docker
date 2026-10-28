@@ -20,10 +20,15 @@ PLUGINS = [
     "netbox_wdm",
     "netbox_tracepath_plugin",
     "netbox_pathways",
+    "netbox_dns",  # pip package is netbox-plugin-dns
+    "notices",  # pip package is netbox-notices
+    "netbox_cable_labels",
+    "netbox_topology_views",
 ]
 
 PLUGINS_CONFIG = {
-    # netbox_secrets is left out until it releases NetBox 4.7 support (see plugin_requirements.txt).
+    # netbox_secrets and netbox_documents are left out until they release working NetBox 4.7 support, and
+    # netbox_routing cannot be enabled next to netbox_bgp (see plugin_requirements.txt).
     "netbox_bgp": {
         # See https://github.com/netbox-community/netbox-bgp for available keys.
     },
@@ -36,6 +41,9 @@ PLUGINS_CONFIG = {
         # device with `manage.py addtotp <username>`, or they'll be locked out.
         "otp_required": False,
     },
+    # netbox_dns, notices and netbox_topology_views have no required PLUGINS_CONFIG entries.
+    # netbox_cable_labels labels new unlabelled cables "#<pk>" by default; to change that, add
+    # "netbox_cable_labels": {"label_template": "<Jinja template, the cable is {{cable}}>"}.
     "netbox_pathways": {
         # Spatial Reference ID. 4326 = WGS84 (plain GPS lat/lon). Required —
         # netbox-pathways will not load without it.
