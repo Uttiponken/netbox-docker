@@ -31,37 +31,32 @@ carrying and installing offline is in `OFFLINE-REPLACE-INSTALL.md`. The sample d
   stops if those tags change or if any plugin template loads a script or stylesheet from the internet. Checked in
   Chromium on a Docker network without internet, with a copy of the dev data: the WDM circuit and channel traces and
   the FMS fiber circuit path draw and the FMS device splice editor loads; with the previous image they stay empty.
+- **v1.3.0 (2026-11-02): netbox-fms 0.8.0, netbox-notices 1.4.0, netbox-pathways 0.4.0; builds on Docker 24 again.**
+  fms 0.7.0 adds fiber faults and 0.8.0 requires NetBox 4.7.0; notices 1.4.0 can generate notifications from events
+  (off unless configured); pathways 0.4.0 shows the tenant on every pathway type. v1.2.1 downloaded D3 with
+  `ADD --checksum`, which the BuildKit of Docker Engine 24 (0.11) accepts only with the labs Dockerfile syntax, so
+  that release did not build there; `Dockerfile-Plugins` now uses `curl` and `sha256sum`, and also ships the license
+  texts of d3-ease, d3-geo and delaunator, which are inside `d3.min.js`. Tested with the guide's commands on a
+  restored copy of a v1.0.0 database and from an empty database: `verify.py` 70 passed, 0 failed, an unchanged second
+  run, the tracepath smoke and acceptance tests; the development stack was upgraded in place. Documentation:
+  `OPERATIONS.md` §7 rewritten (it described an older route with the development override and the image set from
+  before PostGIS), §6.7 upgrade log, §8.6 the notices calendar token, §9 notes on the plugins added in v1.1.0, and in
+  the offline guide the rows for older plugin versions and what still needs the internet.
 
 ## Next
 
-1. **Documentation after v1.1.0.**
-   - `OPERATIONS.md` §9.2 and §9.3 still describe netbox-topology-views as untested; it is installed since v1.1.0.
-   - Usage notes for the plugins added in v1.1.0:
-     - netbox-topology-views: since 5.0.0, users who are not superusers need add/change permission on the
-       coordinate models (coordinate, circuitcoordinate, powerpanelcoordinate, powerfeedcoordinate) to save
-       positions, and the diagram stays empty until "show cables" and "show unconnected" are ticked.
-     - netbox-notices: the iCal feed `/plugins/notices/ical/maintenances.ics` accepts an API token in the URL
-       (`?token=`), which ends up in proxy logs and calendar clients. §8 should recommend a separate read-only user
-       and token for it.
-     - netbox-cable-labels: how to set the label template, and that the labels it writes are not in the change log.
-   - `OFFLINE-REPLACE-INSTALL.md`: a general row in the "what you found" table for a plugin app in the old database
-     that the new image does not carry (so far only netbox-secrets has a row), and the image size (2.66 GB; the guide
-     says about 2.3 GB).
-   - `OPERATIONS.md` §4 step 10 should also name `extensions/postgis-pathways/configuration/plugins.py`, and the
-     "Last verified" line is from 2026-09-26.
-2. **Replace the air-gapped production installation** with `OFFLINE-REPLACE-INSTALL.md`. Not recorded as done; when
+1. **Replace the air-gapped production installation** with `OFFLINE-REPLACE-INSTALL.md`. Not recorded as done; when
    it is, note the date and the version here.
-3. **Parts of three plugins need the internet in the browser.** Found 2026-10-28 by scanning every plugin in the
-   image; the guides do not say so yet. On the air-gapped host these stay empty:
-   - netbox-wdm: the channel and circuit trace diagrams (D3 from `d3js.org`);
-   - netbox-fms: the fiber path and splice diagrams (D3 from `cdn.jsdelivr.net`);
-   - netbox-pathways: the map background (tiles from `tile.openstreetmap.org` and `server.arcgisonline.com`; the
-     features themselves still draw). Its `map_tiles` and `map_base_layers` settings can point at a tile server on
-     the internal network, or the base layer can be left out.
-
-   D3 is solved in the image since v1.2.1 (see Done). Still to do: report it upstream so both plugins bundle D3; the
-   pathways map tiles (a tile server on the internal network, or no base layer); and the guides should list what
-   still needs the internet.
+2. **The pathways map background needs the internet.** Its tiles come from `tile.openstreetmap.org` and
+   `server.arcgisonline.com`; on the air-gapped host the features still draw, the background stays empty. The guide
+   says so (F10). To do: a tile server on the internal network for its `map_tiles` and `map_base_layers` settings, or
+   no base layer. Every other plugin works offline (image scanned on 2026-11-02, v1.3.0).
+3. **Ask netbox-fms and netbox-wdm to ship D3 themselves.** The image serves D3 since v1.2.1; upstream bundling would
+   make that block unnecessary. Requested on 2026-11-02: jsenecal/netbox-fms#238 and jsenecal/netbox-wdm#102.
+4. **The next netbox-pathways release.** Already merged upstream, not released: one ltree-based `Pathway` model and
+   one API endpoint instead of one per type, the geometry field renamed `path` -> `geometry`, and the fix for the
+   Pathways list page (500 on NetBox 4.7, still in 0.4.0). It needs sample data changes (`plant.py`, the metro data)
+   and a rehearsal on a copy of the data before the pin moves.
 
 ## Waiting for a release upstream
 
@@ -71,7 +66,7 @@ build and load can still stop NetBox from starting together.
 
 | Plugin | Why it is out | When a working release is published |
 |---|---|---|
-| netbox-secrets | 3.1.1 declares `max_version = "4.6.99"`; 4.7 support is an unmerged pull request. | Pin it, add `netbox_secrets` to both `plugins.py` files, rebuild. The secrets still in the database come back (the user key's private key is needed). The sample data adds its encrypted router logins when its build runs again. |
+| netbox-secrets | 3.1.2 (the newest, 2026-10-26) still declares `max_version = "4.6.99"`; 4.7 support is an unmerged pull request. | Pin it, add `netbox_secrets` to both `plugins.py` files, rebuild. The secrets still in the database come back (the user key's private key is needed). The sample data adds its encrypted router logins when its build runs again. |
 | netbox-documents | 0.8.5 loads on 4.7, but its Documents list page fails (`'str' object has no attribute 'permissions_required'`) and its panel does not render with the default configuration. The fix is upstream pull request #112. | Pin it, add `netbox_documents` to both `plugins.py` files, rebuild. Its files go to the `netbox-media-files` volume, which the backups already cover. |
 | netbox-routing | Cannot run next to netbox-bgp: both define the GraphQL types `CommunityType`, `CommunityListType` and `PrefixListType`, and NetBox exits at startup with `DuplicatedTypeName`. 0.5.1 is pre-1.0 with open BGP bugs. | Replaces netbox-bgp, see below. |
 
@@ -96,7 +91,8 @@ netbox-bgp stays until netbox-routing has a stable release. Then, in one change:
   Pinning them by digest as well is open.
 - **D3 for netbox-fms and netbox-wdm (since v1.2.1):** on every upgrade and every bump of either plugin, check for a
   newer D3 7.x and the plugins' changelogs (`OPERATIONS.md` §6.1 step 6). Update the pinned version and checksums
-  when D3 moves; drop the block in `Dockerfile-Plugins` once both plugins bundle D3 themselves (the build stops when
+  when D3 moves, together with the license files of the packages inside its bundle (d3-ease, d3-geo,
+  delaunator); drop the block in `Dockerfile-Plugins` once both plugins bundle D3 themselves (the build stops when
   they stop using the CDN). Test the diagrams on a host without internet after any change.
 - **Every plugin change:** follow `OPERATIONS.md` §4, change both `plugins.py` files, build, start until healthy, run
   the sample data's build and `verify.py` and the tracepath smoke test, and check that the plugin loads nothing from

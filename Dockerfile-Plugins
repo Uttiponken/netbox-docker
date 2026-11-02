@@ -25,17 +25,26 @@ RUN /usr/local/bin/uv pip install -e /opt/netbox/custom-plugins/netbox-tracepath
 # point their script tags at it. The build stops if a plugin upgrade changes those tags, or if any plugin template
 # still loads a script or stylesheet from the internet. The files go straight into STATIC_ROOT, which collectstatic
 # (here and in the PostGIS stage, never with --clear) leaves alone; NetBox 4.7 collects only some project-static
-# subfolders. Keep it current (docs/OPERATIONS.md §6.1): for a newer D3 7.x, change the version in both URLs and
-# both checksums and test the pages offline; once both plugins bundle D3 themselves (the build then stops below),
+# subfolders. Keep it current (docs/OPERATIONS.md §6.1): for a newer D3 7.x, change the version in both D3 URLs and
+# their checksums and test the pages offline; once both plugins bundle D3 themselves (the build then stops below),
 # drop this block.
-ADD --checksum=sha256:f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539 \
-    https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js /tmp/d3/d3.min.js
-ADD --checksum=sha256:3e6849627f74ff73c257a3ae1efb574015d94fc1035c05ec3c15805165efcbc4 \
-    https://cdn.jsdelivr.net/npm/d3@7.9.0/LICENSE /tmp/d3/LICENSE
+# D3 is ISC-licensed. d3.min.js also contains packages with notices of their own, shipped next to it: d3-ease
+# (BSD-3-Clause, Robert Penner's easing equations), d3-geo (ISC, plus MIT for code from GeographicLib) and
+# delaunator (ISC, Mapbox). robust-predicates (Unlicense) needs no notice. The versions are the ones D3 7.9.0 was
+# built with; check them when D3 changes (docs/OPERATIONS.md §6.1).
+# curl and sha256sum rather than ADD --checksum: the BuildKit in Docker Engine 24 (0.11) accepts ADD --checksum only
+# with the labs Dockerfile syntax, and this build has to work there too.
 RUN <<'EOF'
 set -eu
-install -D -m 644 -t /opt/netbox/netbox/static/vendor/d3 /tmp/d3/d3.min.js /tmp/d3/LICENSE
-rm -rf /tmp/d3
+mkdir -p /tmp/d3 && cd /tmp/d3
+fetch() { curl -fsSL --retry 3 -o "$1" "$2" && echo "$3  $1" | sha256sum -c -; }
+fetch d3.min.js          https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js   f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539
+fetch LICENSE            https://cdn.jsdelivr.net/npm/d3@7.9.0/LICENSE          3e6849627f74ff73c257a3ae1efb574015d94fc1035c05ec3c15805165efcbc4
+fetch LICENSE.d3-ease    https://cdn.jsdelivr.net/npm/d3-ease@3.0.1/LICENSE     b989d9085148d21ff64a75e14462aefa06b2589a55553b07b1460c70081c7d08
+fetch LICENSE.d3-geo     https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/LICENSE      3e3edc1224eec9c39cd26491a21304a62883c1e5b6a65c5283ccc7a6cc94baee
+fetch LICENSE.delaunator https://cdn.jsdelivr.net/npm/delaunator@5.0.1/LICENSE  b8878372a0d7d1c303f48659ddbd6881807cd2196e4af2f548d8da0c0f7c4d71
+install -D -m 644 -t /opt/netbox/netbox/static/vendor/d3 /tmp/d3/d3.min.js /tmp/d3/LICENSE*
+cd / && rm -rf /tmp/d3
 site=$(echo /opt/netbox/venv/lib/python3*/site-packages)
 cdn='https://(d3js\.org/d3\.v7\.min\.js|cdn\.jsdelivr\.net/npm/d3@7/dist/d3\.min\.js)'
 files=$(grep -rlE "$cdn" --include='*.html' "$site/netbox_fms" "$site/netbox_wdm" || true)

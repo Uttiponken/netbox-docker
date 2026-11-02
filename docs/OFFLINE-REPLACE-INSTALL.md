@@ -27,7 +27,8 @@ these plugins baked in: netbox-bgp, netbox-fms, netbox-inventory, netbox-otp-plu
 netbox-floorplan-plugin, netbox-wdm, netbox-pathways, netbox-plugin-dns, netbox-notices, netbox-cable-labels,
 netbox-topology-views, the example plugin and **netbox-tracepath-plugin**. Two more
 images are pulled as they are: `postgis/postgis:18-3.6-alpine` (the database) and `valkey/valkey:9.1-alpine`
-(Redis). About 2.3 GB before compression.
+(Redis). About 2.3 GB before compression (2.29 GB for the three images, measured for v1.3.0 with
+`docker image inspect` on the arm64 development machine).
 
 **Rules this guide follows. Keep them if you change anything.**
 
@@ -46,12 +47,14 @@ images are pulled as they are: `postgis/postgis:18-3.6-alpine` (the database) an
    trees into the containers) must not be used for this. A missing mount directory would be created empty and hide
    the plugin, and it would not start.
 
-**What was tested** (on the development machine, with this repository's own data): the offline overlay builds; the
-backup commands; a restore into a brand-new PostGIS database with every row count identical; the file volumes
-restored from their archives; the plugins, including netbox-tracepath-plugin 0.8.0 from inside the image, load and
-print a PDF with no source tree mounted. **Not tested:** upgrading a database from an older NetBox version, because
-that needs your data. Step E exists for that: it does the upgrade on a copy so a problem shows up before anything
-is replaced.
+**What was tested** (on the development machine, with this repository's own data, last for v1.3.0 on 2026-11-02):
+the offline overlay builds; the backup commands of D; F2 to F10 on a restored copy of a database from this
+repository's v1.0.0 (NetBox 4.7.3, nine plugins), with every row count identical, the file volumes restored from
+their archives, the old API token working, the plugin migrations applied on first start (`OPERATIONS.md` §6.7) and
+the plugins, including netbox-tracepath-plugin 0.8.0 from inside the image, printing PDFs with no source tree
+mounted; and a first start on an empty database (A4). The step from NetBox 4.6 was rehearsed the same way for
+v1.0.0 (`OPERATIONS.md` §6.6). **Not tested:** your database with your plugins and versions. Step E exists for that:
+it does the upgrade on a copy so a problem shows up before anything is replaced.
 
 ---
 
@@ -92,8 +95,7 @@ A zip has no git history, so the two `git` commands below that record the versio
 versions into `MANIFEST.txt` by hand instead (A5).
 
 The two directories must be siblings: the build copies the plugin from `../netbox-tracepath-plugin`. Both
-repositories are private; authenticate first (`gh auth login`, or a token in the URL). Record what you are
-building:
+repositories are public, so no login is needed. Record what you are building:
 
 ```bash
 git -C netbox-docker rev-parse HEAD
@@ -232,7 +234,9 @@ How to read it:
 |---|---|
 | PostgreSQL major **is not 18** | Normal. That is why the data moves as a dump, never as a volume. |
 | NetBox is **4.7.x** | The simple case. The new image starts on the restored data. |
-| NetBox is **4.6.x** | One minor step. The new container runs the 4.7 migrations on first start, and netbox-fms 0.6.0 deletes all fiber circuit path assignments: read `OPERATIONS.md` §6.6 and rehearse in step E. |
+| NetBox is **4.6.x** | One minor step. The new container runs the 4.7 migrations on first start: read `OPERATIONS.md` §6.6 and rehearse in step E. |
+| The old installation runs **netbox-fms 0.5 or older** (`docker compose exec -T netbox sh -c 'uv pip list 2>/dev/null' \| grep -i fms`) | Its migration 0039 (in 0.6.0 and later) deletes all fiber circuit path assignments; the circuits have to be assigned to the derived paths again (`OPERATIONS.md` §6.6 item 4). Export them before the cut-over if you need the list. |
+| The old installation runs **older versions of the other plugins** | Their migrations run on first start. The ones that change data: netbox-wdm 0.3.0 renames the C-band grid keys (`dwdm_100ghz` → `dwdm_c_100ghz`), netbox-pathways 0.3.0 moved a structure's map point from `location` to `geometry`. Scripts that write the old names have to follow. |
 | The app `netbox_secrets` is in `django_migrations` | The new image does not carry netbox-secrets (no NetBox 4.7 release yet). The secrets stay in the database, unreadable until the plugin is added back; keep the backup and the user key's private key. |
 | NetBox is an **older 4.x** | The new container runs all newer migrations on first start (`migrate`, `trace_paths`, `reindex`), which is why you rehearse in step E. Read the NetBox release notes for every version in between. |
 | NetBox is **3.x** | Stop and ask for an upgrade path first: NetBox 4.0 had requirements on the version you upgrade from. |
@@ -491,8 +495,12 @@ In the browser (`http://<host>:<port>`):
 - Open an object that has an uploaded image or attachment: the file loads (the media volume came across).
 - **Tracepath:** pick a cable or an interface that has a cable and print it; the PDF opens.
 - Compare a couple of objects and the totals with what the old installation showed.
-- Maps (netbox-pathways, floorplan) draw their background from a public tile server on the internet. On an air-gapped
-  network the map background stays empty; the data is intact.
+- **FMS and WDM diagrams:** open a fiber circuit path (netbox-fms) and a WDM circuit's trace tab (netbox-wdm). Both
+  draw without internet, because the image serves D3 itself.
+- **What still needs the internet:** only the background of the netbox-pathways map, which comes from public tile
+  servers (`tile.openstreetmap.org`, `server.arcgisonline.com`). On an air-gapped network it stays empty; the
+  pathways, structures and cables on it still draw. Its `map_tiles` and `map_base_layers` settings can point at a
+  tile server on your own network. Every other plugin page works offline.
 
 ### F11. Rehearsal only: stop here
 

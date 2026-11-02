@@ -4,8 +4,10 @@ Status: living document. Update the version tables whenever a plugin or NetBox
 version changes. What comes next, and which plugins wait for a release, is in
 `ROADMAP.md`.
 
-Last verified: 2026-09-26, on netbox-docker `docker compose` (Docker Engine
-24.0.2 / Compose v2.19.0). Target execution/staging OS for this runbook:
+Last verified: 2026-11-02, this repository's `v1.3.0` (§6.7), on Docker Engine
+24.0.2 / Compose v2.19.0 (Docker Desktop on an arm64 Mac): the two-stage
+`--no-cache` build, an upgrade of a restored database and an empty-database
+start, each with the sample data and the netbox-tracepath-plugin tests. Target execution/staging OS for this runbook:
 **Debian 13 "trixie"** (instructions are identical on Debian 12 "bookworm" —
 substitute the codename in the apt source line). The Docker prerequisites for
 **Ubuntu 24.04** and **Fedora** are in §2.2 and §2.3.
@@ -32,20 +34,20 @@ digest so every build starts from the same image, see §6.3), carrying:
 | Plugin (pip package)         | App label             | Pinned version | Why this version |
 |-------------------------------|------------------------|----------------|-------------------|
 | netbox-bgp                     | `netbox_bgp`           | 0.20.2         | Latest. Hard-pins to NetBox 4.7.x only (0.19.0 was the 4.6 release). |
-| netbox-fms                     | `netbox_fms`           | 0.6.0          | Latest. Alpha software; `min_version=4.5`, no max. 0.6.0 derives fiber paths by analysis, see §6.6. |
+| netbox-fms                     | `netbox_fms`           | 0.8.0          | Latest. Alpha software; `min_version=4.7.0`, no max. 0.6.0 derives fiber paths by analysis (§6.6); 0.7.0 adds fiber faults (§6.7). |
 | netbox-inventory                | `netbox_inventory`     | 2.7.1          | Latest. Hard-pins to NetBox 4.7 (2.6.1 was the 4.6 release). |
 | netbox-otp-plugin               | `netbox_otp_plugin`    | 1.3.6          | Latest. Supports NetBox 4.0–4.99. |
 | netbox-floorplan-plugin          | `netbox_floorplan`    | 0.10.0         | Latest. Hard-pins to NetBox 4.7.x only (0.9.2 was the 4.6 release). |
 | netbox-wdm                      | `netbox_wdm`           | 0.3.0          | Latest. Alpha software; `min_version=4.7.0`, no max. Companion to netbox-fms. Renames the C-band grid keys (migration 0012 rewrites stored rows; clients must send `dwdm_c_100ghz`). |
 | (your own plugin)               | `netbox_example_plugin`| 0.1.0          | Scaffold in `custom-plugins/netbox-example-plugin/`. |
 | (your own plugin)               | `netbox_tracepath_plugin`| 0.8.0        | PDF cable traces, from its own repository, see §3.1. |
-| netbox-pathways (PostGIS overlay) | `netbox_pathways`     | 0.3.0          | Latest. Declares no NetBox range; tested on 4.7.3. See §10. |
+| netbox-pathways (PostGIS overlay) | `netbox_pathways`     | 0.4.0          | Latest. `min_version=4.7.0`, no max. Every pathway type shows its tenant. The Pathways list page still fails on 4.7 (fixed upstream, not released). See §10. |
 | netbox-plugin-dns               | `netbox_dns`           | 1.7.3          | Latest. The 1.7.x line is `min_version=4.7.0` (1.6.x is for 4.5/4.6). Not the abandoned PyPI package `netbox-dns`. |
-| netbox-notices                  | `notices`              | 1.3.0          | Latest. `min_version=4.5`, no max. Maintenance/outage calendar and iCal feed; FullCalendar is bundled. |
+| netbox-notices                  | `notices`              | 1.4.0          | Latest. `min_version=4.5`, no max. Maintenance/outage calendar and iCal feed (§8.6); FullCalendar is bundled. |
 | netbox-cable-labels             | `netbox_cable_labels`  | 0.1.0          | Only release. 4.2–4.99.99. Labels unlabelled cables `#<pk>`; that write bypasses the change log. |
 | netbox-topology-views           | `netbox_topology_views`| 5.0.0          | Latest. `min_version=4.7.0`. Fixes XSS issues in 4.7.0; saving positions needs add/change on the coordinate models. |
 
-**netbox-secrets is not installed.** Its released 3.1.1 declares
+**netbox-secrets is not installed.** Its newest release, 3.1.2, still declares
 `max_version = "4.6.99"`, so NetBox 4.7 refuses to load it, and no release for
 4.7 exists yet (the work is in an unmerged pull request). It was dropped from
 `plugin_requirements.txt` and both `plugins.py` files. Nothing else depends on
@@ -195,8 +197,8 @@ sudo apt install -y docker-ce=$VERSION_STRING docker-ce-cli=$VERSION_STRING cont
 sudo apt-mark hold docker-ce docker-ce-cli          # keep `apt upgrade` from moving it
 ```
 
-**Air-gapped host:** download the packages on the online host exactly as in §7.3 (the same four packages and
-`apt-get install --download-only`), then install them with `sudo dpkg -i *.deb`.
+**Air-gapped host:** download the packages on the online host as in §7.3 (the same five packages and
+`apt-get install --download-only`), then install them with `sudo dpkg -i ./*.deb`.
 
 ### 2.3 Docker Engine + Compose plugin: Fedora (official Docker rpm repo)
 
@@ -264,7 +266,8 @@ sudo dnf install -y git          # Fedora
 
 ### 2.5 Disk space
 
-Budget **~3 GB** for the built image set (see §7.2 for exact sizes) plus
+Budget **~3 GB** for the built image set (sizes in section 0 of
+`OFFLINE-REPLACE-INSTALL.md`; a build host needs about 15 GB free) plus
 room for the Postgres data volume, which grows with your inventory — a few
 hundred MB is typical for a NetBox instance of a few thousand objects, but
 size for your actual scale.
@@ -491,8 +494,10 @@ plugin at a time:
 9. Confirm in **Plugins → Plugins** in the UI that it shows Active with the
    version you expect, and exercise its main page once.
 
-10. Commit `plugin_requirements.txt`, `configuration/plugins.py`, and this
-    runbook's table in §1 in the same commit.
+10. Commit `plugin_requirements.txt`, both `plugins.py` files
+    (`configuration/plugins.py` and
+    `extensions/postgis-pathways/configuration/plugins.py`, which is the one the
+    PostGIS stack reads), and this runbook's table in §1 in the same commit.
 
 Only move to the next plugin after this one is verified. Adding several at
 once is exactly how "differs in subtle ways" failures become unattributable.
@@ -603,10 +608,16 @@ compatibility check in §1 for every installed plugin. This is not optional
 6. **Offline browser assets.** netbox-fms and netbox-wdm load D3 from a CDN;
    `Dockerfile-Plugins` serves a pinned copy (7.9.0, checked by SHA-256) from
    NetBox's static files instead, so their diagrams work on the air-gapped
-   host. On every upgrade, and whenever one of the two plugins is bumped:
+   host. Next to it go the license texts the bundle needs: D3's own (ISC) and
+   those of three packages inside `d3.min.js` with notices of their own,
+   d3-ease (BSD-3-Clause), d3-geo (ISC and MIT) and delaunator (ISC, Mapbox).
+   On every upgrade, and whenever one of the two plugins is bumped:
    - check for a newer D3 7.x (`https://registry.npmjs.org/d3`, the plugins
-     ask for `d3@7`); if there is one, change the version in both URLs and both
-     checksums in `Dockerfile-Plugins`;
+     ask for `d3@7`); if there is one, change the version and checksum of
+     `d3.min.js` and of D3's `LICENSE` in `Dockerfile-Plugins`, and take the
+     d3-ease, d3-geo and delaunator versions that release depends on
+     (`https://registry.npmjs.org/d3/<version>`), with new checksums for their
+     license files;
    - read the two plugins' changelogs: once they bundle D3 themselves, or move
      to D3 8, their script tags change and the build stops with "no longer load
      D3 from a CDN". Drop the block, or adjust it to the new tags;
@@ -727,132 +738,121 @@ commits describe):
 6. **API tokens keep working** (same `API_TOKEN_PEPPER_1`). A new image reads the health check from
    `/opt/netbox/health.sh`, so use the whole 5.1.1 compose file, never a mix (§6.1 step 4).
 
+### 6.7 Upgrade log: to this repository's `v1.3.0` (netbox-fms 0.8.0, netbox-notices 1.4.0, netbox-pathways 0.4.0)
+
+Rehearsed on 2026-11-02 with the commands of `OFFLINE-REPLACE-INSTALL.md` (D, then F2 to F10) on a restored copy of
+the development database, which still ran this repository's `v1.0.0` (NetBox 4.7.3, nine plugins, netbox-wdm
+0.2.2); the development stack was then upgraded in place the same way. What to expect:
+
+1. **Back up first** (§5.2, or step D of the guide). The migrations cannot be undone.
+2. **The first start applies the missing migrations** (76 s on the sample data): NetBox 4.7.4 (`extras` 0145),
+   netbox-fms 0040 to 0042 (fiber faults, new tables only), netbox-wdm 0009 to 0012 (0012 renames the C-band grid
+   keys in the stored rows, `dwdm_100ghz` → `dwdm_c_100ghz`), netbox-notices 0012, and the plugins added in v1.1.0
+   from their first migration (netbox-dns, netbox-notices, netbox-topology-views). netbox-pathways 0.4.0 has none.
+   Row counts stay identical, and API tokens from the old installation keep working.
+3. **netbox-fms 0.7.0 fiber faults.** A path that crosses an open fault is marked defective: circuit assignment
+   refuses it, active assignments on it break with "Fiber faulted" and come back when the fault is resolved. After
+   the upgrade there are no faults, so nothing changes until someone reports one (Fiber faults list:
+   `/plugins/fms/faults/`).
+4. **netbox-pathways 0.4.0** shows the tenant on every pathway type. The Pathways list page
+   (`/plugins/pathways/pathways/`) still returns a server error on NetBox 4.7; the fix is merged upstream but not
+   released. Every other pathways page works.
+5. **netbox-notices 1.4.0** can generate outgoing notifications from events; that stays off until
+   `auto_generate_notifications` is set (§9.3).
+6. **Sample data:** netbox-sampledata 0.8.2 or later (because of netbox-wdm 0.3.0). On the upgraded copy `verify.py`
+   passes 70 checks after the dataset's own build, and a second build changes nothing; the netbox-tracepath-plugin
+   smoke test and the dataset's tracepath acceptance tests pass.
+
 ---
 
 ## 7. Air-gapped deployment: build, transfer, install
 
-> **Replacing an existing netbox-docker installation and keeping its data?** Use
-> `OFFLINE-REPLACE-INSTALL.md`: it covers the PostGIS image set, the backup of the old installation, a rehearsal
-> and the cut-over. This section describes the generic build, transfer and install.
+Every installation on a host without internet follows `OFFLINE-REPLACE-INSTALL.md`. It builds the image set this
+repository ships (`netbox:latest-plugins-postgis`, `postgis/postgis:18-3.6-alpine`, `valkey/valkey:9.1-alpine`) on an
+online host, tests it there, exports a bundle with checksums (never the development `docker-compose.override.yml`)
+and installs from that bundle. This section says which parts of the guide a situation needs, how to start a new
+installation, and how to get Docker itself onto a host without internet; the guide expects Docker to be there.
 
-Two Linux hosts (Debian 13, Ubuntu 24.04 or Fedora, see §2): **staging** (internet access, used to build) and
-**air-gapped** (no internet access, runs production).
+Two Linux hosts with the same CPU architecture (`uname -m`; Debian 13, Ubuntu 24.04 or Fedora, see §2): the
+**online build host** and the **air-gapped host**.
 
-### 7.1 On staging: build
+### 7.1 Which parts of the guide
 
-Follow §2 and §3 in full on the staging host. Confirm the stack runs and
-verifies cleanly there before proceeding — do not transfer an unverified
-build.
+| Situation | Follow |
+|---|---|
+| An older netbox-docker installation runs on the air-gapped host and its data must stay | The whole guide: build and export (A), carry (B), look at and back up the old installation (C, D), rehearse (E), cut over (F), roll back or clean up (G). |
+| A new host without NetBox | A, B, F2 and F3 of the guide, then §7.2 below instead of F4 to F8, then F9 and F10. |
+| An installation made with the guide gets a new version | G3 of the guide: rebuild, export, carry, back up, load, `docker compose up -d`. |
 
-### 7.2 On staging: export images
+### 7.2 A new installation
+
+There is no old installation to take `SECRET_KEY` and `API_TOKEN_PEPPER_1` from, and `env/netbox.env` ships with
+upstream netbox-docker's public example values, so generate new ones. After F3, in the new directory:
 
 ```bash
-mkdir -p /opt/netbox-airgap-transfer
-cd /opt/netbox-airgap-transfer
+cd /opt/netbox-plugins
+setkey() { grep -v "^$2=" "$1" > "$1.tmp"; printf '%s=%s\n' "$2" "$3" >> "$1.tmp"; mv "$1.tmp" "$1"; }   # as in F4
 
-# Confirm the exact image set in use
-docker compose -f /opt/netbox-docker/docker-compose.yml \
-               -f /opt/netbox-docker/docker-compose.override.yml config --images
-# Expect: netbox:latest-plugins, docker.io/postgres:18-alpine, docker.io/valkey/valkey:9.1-alpine
-
-docker save -o images.tar \
-  netbox:latest-plugins \
-  docker.io/postgres:18-alpine \
-  docker.io/valkey/valkey:9.1-alpine
+setkey env/netbox.env SECRET_KEY "$(openssl rand -hex 32)"
+setkey env/netbox.env API_TOKEN_PEPPER_1 "$(openssl rand -hex 32)"
+PW=$(openssl rand -hex 24)
+setkey env/netbox.env DB_PASSWORD "$PW"
+setkey env/postgres.env POSTGRES_PASSWORD "$PW"
+setkey env/netbox.env RELEASE_CHECK_URL ""        # no internet: do not look up new NetBox releases
+chmod 600 env/*.env
 ```
 
-Approximate sizes at time of writing: `netbox:latest-plugins` ~830 MB,
-`postgres:18-alpine` ~300 MB, `valkey:9.1-alpine` ~45 MB (single image, used
-for both `redis` and `redis-cache` services) — budget ~1.2 GB for
-`images.tar`, plus compression if you gzip it.
+Keep a copy of `SECRET_KEY` and `API_TOKEN_PEPPER_1` with your other secrets: a restore of this installation needs
+the same values (§8.3). Change the Redis passwords as well (§8.1).
 
-### 7.3 On staging: export the repository and Docker installer packages
+PostGIS has to exist before NetBox starts for the first time:
 
 ```bash
-cd /opt/netbox-airgap-transfer
+docker compose up -d --wait postgres
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS postgis"'
+```
 
-# The full repo, including the untracked files that make this build specific
-tar czf netbox-docker-repo.tar.gz -C /opt netbox-docker \
-  --exclude='netbox-docker/.git'
+Then F9 of the guide (the first start runs every migration, which takes a few minutes, and may end with "unhealthy"
+once; the guide says what to do), create the first user (§3.3, `createsuperuser`), and F10 without the checks that
+refer to the old installation.
 
-# Docker Engine + Compose .deb packages (Debian, Ubuntu; for Fedora see §2.3) and their dependencies, for offline
-# install on the air-gapped host (only needed the first time / OS reinstall —
-# skip if the air-gapped host already has Docker provisioned by your normal
-# OS image process)
-mkdir -p docker-debs && cd docker-debs
-apt-get install -y --download-only --reinstall \
+### 7.3 Docker on a host without internet
+
+Skip this if the air-gapped host already has Docker Engine, the Compose v2 plugin (2.17 or newer) and buildx, for
+example from your OS image process. Otherwise download the packages on an online host that runs **the same OS
+release and architecture** and has Docker's package repository set up (§2.1 to §2.3), carry them across with the
+bundle, and install them there.
+
+Debian and Ubuntu:
+
+```bash
+# on the online host
+mkdir -p ~/nbbuild/docker-debs && cd ~/nbbuild/docker-debs
+sudo apt-get clean                                  # so the cache holds only what the next command downloads
+sudo apt-get install -y --download-only --reinstall \
   docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-cp /var/cache/apt/archives/*.deb .
-cd ..
-```
+cp /var/cache/apt/archives/*.deb . && sha256sum *.deb > SHA256SUMS
 
-Checksum everything you're about to move, so you can verify integrity after
-transfer through whatever media/scanning process your site requires:
-
-```bash
-sha256sum images.tar netbox-docker-repo.tar.gz docker-debs/*.deb > SHA256SUMS
-```
-
-### 7.4 Transfer
-
-Move `images.tar`, `netbox-docker-repo.tar.gz`, `docker-debs/`, and
-`SHA256SUMS` across your air gap via your site's approved removable-media /
-data-diode process. This runbook does not prescribe that process — follow
-your organization's media-handling and malware-scanning procedures for
-crossing the air gap.
-
-### 7.5 On the air-gapped host: verify and install
-
-```bash
-cd /path/to/transferred/files
-sha256sum -c SHA256SUMS   # must report OK for every file before proceeding
-```
-
-Install Docker offline (skip if already provisioned):
-
-```bash
-cd docker-debs
-sudo dpkg -i *.deb
+# on the air-gapped host, in the carried directory
+sha256sum -c SHA256SUMS
+sudo dpkg -i ./*.deb
 sudo systemctl enable --now docker
-sudo usermod -aG docker "$USER"
+sudo usermod -aG docker "$USER"                     # log out and in after this
 ```
 
-Load the images and unpack the repo:
+`--download-only` fetches only the dependencies the online host does not have yet. If `dpkg -i` reports a missing
+dependency, download that package the same way (`apt-get install --download-only --reinstall <package>`) and add it.
 
-```bash
-docker load -i images.tar
-docker images   # confirm netbox:latest-plugins, postgres:18-alpine, valkey:9.1-alpine present
+Fedora: §2.3, "Air-gapped host" (`dnf download --resolve --alldeps`).
 
-sudo mkdir -p /opt
-sudo tar xzf netbox-docker-repo.tar.gz -C /opt
-cd /opt/netbox-docker
-```
+Check the result as in §2 (`docker --version`, `docker compose version`). These commands follow Docker's own
+documentation; they were not run on this repository's development machine.
 
-Because the image is already loaded under the tag `netbox:latest-plugins`
-that `docker-compose.override.yml` references, **do not run
-`docker compose build`** on the air-gapped host — there is no internet
-access to fetch base layers or plugin packages, and none is needed since
-the image is already local:
+### 7.4 Keeping a record
 
-```bash
-docker compose up -d --wait
-docker compose ps   # confirm all healthy
-```
-
-Restore your database backup if this is replacing an existing instance
-(§5.5), or create a fresh superuser if this is a new instance (§3, final
-step).
-
-Re-run the same verification as §3: check `settings.PLUGINS`, check
-**Plugins → Plugins** in the UI, exercise each plugin's page.
-
-### 7.6 Updating the air-gapped host later
-
-There is no `docker compose pull` or `build` path available air-gapped.
-Every update — a plugin version bump, a NetBox upgrade, a security patch —
-must be rebuilt on staging (§6.3) and re-shipped through §7.2–§7.5 as a new
-`images.tar`. Keep `SHA256SUMS` per shipment so you have an audit trail of
-exactly what image was installed when.
+Every update is a new bundle from the online host (guide G3); nothing is built or pulled on the air-gapped host.
+Keep each bundle's `MANIFEST.txt` and `SHA256SUMS`, so you can tell later exactly which images and plugin versions
+were installed when.
 
 ---
 
@@ -895,8 +895,10 @@ These files are not gitignored by upstream netbox-docker. Either:
 - template them (`env/postgres.env.example`) and inject real values via
   your deployment process instead of committing them.
 
-The air-gapped transfer procedure in §7 moves these files as plain tar
-contents — treat `netbox-docker-repo.tar.gz` and its checksum with the same
+The bundle from `OFFLINE-REPLACE-INSTALL.md` (§7) carries `env/*.env` with
+upstream's public example values; the real secrets are only set on the target
+(guide step F4, or §7.2). The backup archive `config.tar.gz` from step D of the
+guide does hold the real ones: treat it, and every database dump, with the same
 handling rules as a credentials export, not as ordinary software.
 
 ### 8.3 `SECRET_KEY` and `API_TOKEN_PEPPERS`
@@ -939,6 +941,18 @@ somewhere, or that specific user already has a device enrolled — check
 `from django_otp import user_has_device; user_has_device(user)` in
 `manage.py shell` to tell which.
 
+### 8.6 The netbox-notices calendar feed
+
+netbox-notices publishes maintenances as an iCal feed,
+`/plugins/notices/ical/maintenances.ics`. A calendar client cannot log in, so
+the feed also accepts a NetBox API token in the URL (`?token=nbt_...`). A token
+in a URL ends up in proxy and web server logs and in every calendar client that
+subscribes, and it acts with the full rights of its user. Give the feed its own
+user whose only permission is to view maintenances (an object permission with
+the action *view* on *Notices > maintenance*, which is what the feed checks:
+`notices.view_maintenance`), and a token for that user with **Write enabled**
+switched off. Never subscribe with an administrator's token.
+
 ---
 
 ## 9. Recommended additional plugins for network/optical documentation
@@ -962,10 +976,13 @@ sheets. It's designed for exactly the "outside plant" documentation problem
 describe what's inside a cable and which wavelengths are lit; pathways
 describes where the cable physically runs.
 
-Version 0.2.2 declared support for NetBox 4.5.3–4.6.x; 0.3.0 (the pin
-now, for NetBox 4.7) declares no range and was tested on 4.7.3. It needs
-PostGIS, and its structure map point moved from `location` to `geometry` in
-0.3.0, which the sample data follows.
+Version 0.2.2 declared support for NetBox 4.5.3–4.6.x; 0.3.0 declared no
+range; 0.4.0 (the pin now) requires NetBox 4.7.0. It needs PostGIS, and its
+structure map point moved from `location` to `geometry` in 0.3.0, which the
+sample data follows. Its next release will be a larger change (one
+ltree-based Pathway model and one API endpoint instead of one per type,
+already merged upstream): it will need sample data changes and a rehearsal
+before it is pinned.
 
 **This is now built, tested, and available as an optional extension** — see
 **§10**. It is not merged into the base deployment (§1–§8): it requires a
@@ -978,32 +995,46 @@ that matters most for staying reproducible — what to check before an
 upgrade that a plain NetBox-plus-plugins upgrade doesn't have to worry
 about.
 
-### 9.2 `netbox-topology-views` — general L1 diagram, but has a version gap right now
+### 9.2 `netbox-topology-views` — installed since v1.1.0
 
 [netbox-community/netbox-topology-views](https://github.com/netbox-community/netbox-topology-views)
 draws a topology diagram from your existing cable connections (with
-draw.io/PNG export). This is the closest thing to a generic "visualize the
-network" plugin, and is likely what you were searching for.
+draw.io/PNG export). It is installed since this repository's v1.1.0 (5.0.0,
+NetBox 4.7 only). Two things to know:
 
-**Caveat**: its own compatibility table jumped from `v4.5.1` (NetBox 4.5.x)
-to `v4.7.0` (NetBox 4.7.x only), with no release for 4.6. The stack now runs
-NetBox 4.7, so `v4.7.0` matches, but it has not been added or tested here.
-Try it on a throwaway copy of the stack (§6.3) before adding it.
+- Since 5.0.0 the view respects object permissions. A user who is not a
+  superuser sees only the devices and cables they may view, and needs add and
+  change permission on the coordinate models (`coordinate`,
+  `circuitcoordinate`, `powerpanelcoordinate`, `powerfeedcoordinate`) to save
+  node positions.
+- If the diagram stays empty, tick **Show cables** and **Show unconnected** in
+  its options; with the sample data it draws nothing without them.
 
-### 9.3 What you already have covering part of this
+### 9.3 `netbox-notices` and `netbox-cable-labels` — installed since v1.1.0
 
-`netbox-fms` and `netbox-wdm` both ship their own visualizations already
-active in your instance: FMS has DAG-based fiber path/splice visualization,
-and WDM has an interactive circuit-trace flow diagram on `WdmCircuit` detail
-pages. For end-to-end optical circuit visualization specifically (as opposed
-to general L1 device topology), you likely already have more than
-`netbox-topology-views` would add.
+- **netbox-notices** records provider maintenances and outages, shows them in a
+  calendar and publishes an iCal feed; protect that feed as in §8.6. Since
+  1.4.0 it can also generate outgoing notifications from events. That is off
+  until `PLUGINS_CONFIG["notices"]["auto_generate_notifications"]` lists the
+  event statuses that should trigger one.
+- **netbox-cable-labels** gives a cable created without a label one from a
+  Jinja template, by default `#{{cable.pk}}`. To change it, add
+  `"netbox_cable_labels": {"label_template": "<template, the cable is {{cable}}>"}`
+  to `PLUGINS_CONFIG` in `extensions/postgis-pathways/configuration/plugins.py`
+  (and in `configuration/plugins.py`). The label is written after the cable is
+  saved, with a direct database update: it does **not** appear in the change
+  log, and the API response to the create still shows the label empty (read
+  the cable again to see it).
 
-**My recommendation, in order:** if geographic/outside-plant documentation
-of your fiber and leased circuits is the priority, `netbox-pathways` is the
-better fit for what you described and is worth the PostGIS investment.
-`netbox-topology-views` is lower-value right now and worth a trial on a
-throwaway copy of the 4.7 stack.
+### 9.4 What the optical plugins already show
+
+`netbox-fms` and `netbox-wdm` both ship their own visualizations: FMS has
+DAG-based fiber path and splice visualization, and WDM has an interactive
+circuit-trace flow diagram on `WdmCircuit` detail pages (both draw with D3,
+which the image serves itself, see §6.1 step 6). For end-to-end optical circuit
+visualization they show more than `netbox-topology-views`, which draws the
+general L1 device topology; the two complement each other. `netbox-pathways`
+(§9.1, §10) adds where the cables physically run.
 
 ---
 
