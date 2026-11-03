@@ -10,7 +10,7 @@ Last verified: 2026-11-02, this repository's `v1.3.0` (§6.7), on Docker Engine
 start, each with the sample data and the netbox-tracepath-plugin tests. Target execution/staging OS for this runbook:
 **Debian 13 "trixie"** (instructions are identical on Debian 12 "bookworm" —
 substitute the codename in the apt source line). The Docker prerequisites for
-**Ubuntu 24.04** and **Fedora** are in §2.2 and §2.3.
+**Ubuntu 24.04 / 22.04** and **Fedora** are in §2.2 and §2.3.
 
 > **Two ways this runbook can read.** It started as the notes of the development setup, where a
 > `docker-compose.override.yml` (git-ignored, not in the repository) mounts source folders into the containers.
@@ -112,7 +112,7 @@ system; everything after §2 is the same on all of them.
 | System | Section |
 |---|---|
 | Debian 13 (and 12) | §2.1 |
-| Ubuntu 24.04 LTS | §2.2 |
+| Ubuntu 24.04 / 22.04 LTS | §2.2 |
 | Fedora 43 / 44 | §2.3 |
 
 ### 2.1 Docker Engine + Compose plugin: Debian 13 (official Docker apt repo)
@@ -147,21 +147,25 @@ docker --version              # tested against 24.0.2 or newer
 docker compose version        # tested against v2.19.0 or newer
 ```
 
-### 2.2 Docker Engine + Compose plugin: Ubuntu 24.04 (official Docker apt repo)
+Coming from Debian's `docker.io`: the notes at the end of §2.2 apply, above all **never purge `docker.io`**.
 
-The commands follow Docker's installation guide for Ubuntu (docs.docker.com/engine/install/ubuntu/); they were not
-run on this repository's development machine, so check the version output at the end.
+### 2.2 Docker Engine + Compose plugin: Ubuntu 24.04 and 22.04 (official Docker apt repo)
+
+The commands follow Docker's installation guide for Ubuntu (docs.docker.com/engine/install/ubuntu/), except that
+Docker's repository is added before the old packages are removed, so nothing goes if it cannot be reached. Checked
+on 2026-11-03 on Ubuntu 22.04.5 (x86_64), coming from Ubuntu's `docker.io` 29.1.3, `docker-compose` 1.29.2
+(Compose v1) and `docker-compose-v2`: afterwards Docker Engine 29.9.2, Compose v5.7.0 and buildx 0.38.1, with every
+container, image, volume and network kept. Not yet run on Ubuntu 24.04; the commands are the same, the codename
+comes from `/etc/os-release`. Coming from Ubuntu's `docker.io`, read the notes after the verify step first.
 
 ```bash
-# Remove unofficial packages first, if present
-sudo apt remove $(dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc | cut -f1) 2>/dev/null || true
-
-# Docker's signing key and apt repository
+# Docker's signing key and apt repository (first, so nothing is removed if this fails)
 sudo apt update
 sudo apt install -y ca-certificates curl
 sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 sudo chmod a+r /etc/apt/keyrings/docker.asc
+gpg --show-keys /etc/apt/keyrings/docker.asc     # the fingerprint must be 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 
 sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
 Types: deb
@@ -173,6 +177,13 @@ Signed-By: /etc/apt/keyrings/docker.asc
 EOF
 
 sudo apt update
+apt-cache policy docker-ce | grep Candidate      # must show a version, not "(none)"
+
+# Remove Ubuntu's packages, all of them. `apt install docker-ce` replaces docker.io, containerd, runc and
+# docker-buildx by itself, but not docker-compose-v2, and docker-compose-plugin then fails to install ("trying to
+# overwrite '/usr/libexec/docker/cli-plugins/docker-compose', which is also in package docker-compose-v2").
+sudo apt remove $(dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc | cut -f1) 2>/dev/null || true
+
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 # Allow your user to run docker without sudo (log out and in after this)
@@ -183,10 +194,33 @@ The service starts and is enabled by the package. Verify:
 
 ```bash
 sudo systemctl status docker --no-pager | head -3
-docker --version              # 24.0.2 or newer
-docker compose version        # v2.19.0 or newer (v2.17 is the minimum)
+docker --version              # 24.0.2 or newer (29.9.2 on 2026-11-03)
+docker compose version        # v2.17 or newer; Docker's packages ship v5 now (v5.7.0 on 2026-11-03)
+docker buildx version
 docker run --rm hello-world   # after logging out and in again; otherwise use sudo
 ```
+
+**Coming from Ubuntu's `docker.io`:**
+
+- **Containers, images, volumes and networks stay.** `apt remove` does not touch `/var/lib/docker`, and the new
+  daemon keeps the old `overlay2` store: `docker info --format '{{.Driver}}'` should still say `overlay2`.
+- **Running containers stop** when the old daemon goes. Those with restart policy `no`
+  (`docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' <name>`) stay stopped until you start them again.
+- **Compose v1 (`docker-compose`) is gone afterwards.** Run existing projects with `docker compose`; on the next `up`
+  it recreates their containers with hyphens instead of underscores in the names (`project-service-1`), on the same
+  volumes.
+- **Never purge `docker.io`** (`apt purge docker.io`, or a clean-up such as `apt purge '~c'` that purges every
+  removed package). Its purge step runs `/var/lib/docker/nuke-graph-directory.sh`, which the package leaves behind,
+  and that deletes `/var/lib/docker`: every image, container and volume. The same step also does systemd clean-up
+  on `docker.service`, the unit name Docker's packages use too. Delete the script after the swap and leave
+  `docker.io` and `containerd` in the `rc` state that `dpkg -l` shows:
+
+  ```bash
+  sudo rm -f /var/lib/docker/nuke-graph-directory.sh
+  ```
+
+  This was read in Ubuntu 22.04's package scripts (`/var/lib/dpkg/info/docker.io.postrm`); Debian's `docker.io`
+  comes from the same packaging, so treat it the same way (§2.1).
 
 **A specific version instead of the latest** (to match another host exactly):
 
@@ -773,7 +807,7 @@ online host, tests it there, exports a bundle with checksums (never the developm
 and installs from that bundle. This section says which parts of the guide a situation needs, how to start a new
 installation, and how to get Docker itself onto a host without internet; the guide expects Docker to be there.
 
-Two Linux hosts with the same CPU architecture (`uname -m`; Debian 13, Ubuntu 24.04 or Fedora, see §2): the
+Two Linux hosts with the same CPU architecture (`uname -m`; Debian 13, Ubuntu 24.04 / 22.04 or Fedora, see §2): the
 **online build host** and the **air-gapped host**.
 
 ### 7.1 Which parts of the guide
@@ -821,7 +855,8 @@ refer to the old installation.
 Skip this if the air-gapped host already has Docker Engine, the Compose v2 plugin (2.17 or newer) and buildx, for
 example from your OS image process. Otherwise download the packages on an online host that runs **the same OS
 release and architecture** and has Docker's package repository set up (§2.1 to §2.3), carry them across with the
-bundle, and install them there.
+bundle, and install them there. If the air-gapped host has the distribution's `docker.io`, `docker-compose`,
+`docker-compose-v2` or `docker-buildx`, remove them first as in §2.1 and §2.2, and never purge `docker.io` (§2.2).
 
 Debian and Ubuntu:
 
