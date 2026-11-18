@@ -11,3 +11,6 @@ test-configuration
 .netbox/contrib
 .netbox/scripts
 .netbox/upgrade.sh
+
+# data/: the installation's state, never in the build context (data/postgres, uid 70 mode 700, breaks the build)
+data

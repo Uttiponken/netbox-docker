@@ -11,6 +11,7 @@
 # here too. The two files are not kept in sync automatically.
 
 PLUGINS = [
+    "netbox_secrets",
     "netbox_bgp",
     "netbox_fms",
     "netbox_example_plugin",
@@ -24,11 +25,14 @@ PLUGINS = [
     "notices",  # pip package is netbox-notices
     "netbox_cable_labels",
     "netbox_topology_views",
+    "netbox_documents",
 ]
 
 PLUGINS_CONFIG = {
-    # netbox_secrets and netbox_documents are left out until they release working NetBox 4.7 support, and
     # netbox_routing cannot be enabled next to netbox_bgp (see plugin_requirements.txt).
+    "netbox_secrets": {
+        # See https://github.com/Onemind-Services-LLC/netbox-secrets for available keys.
+    },
     "netbox_bgp": {
         # See https://github.com/netbox-community/netbox-bgp for available keys.
     },
@@ -42,6 +46,7 @@ PLUGINS_CONFIG = {
         "otp_required": False,
     },
     # netbox_dns, notices and netbox_topology_views have no required PLUGINS_CONFIG entries.
+    # netbox_documents' settings are all optional (https://github.com/jasonyates/netbox-documents).
     # netbox_cable_labels labels new unlabelled cables "#<pk>" by default; to change that, add
     # "netbox_cable_labels": {"label_template": "<Jinja template, the cable is {{cable}}>"}.
     "netbox_pathways": {

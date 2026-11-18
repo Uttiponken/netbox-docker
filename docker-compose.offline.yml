@@ -1,11 +1,22 @@
 # Overlay for BUILDING the image set that is shipped to an offline host, and for RUNNING it there.
 #
 # Unlike docker-compose.override.yml (the development setup: source trees bind-mounted into the containers),
-# this overlay mounts NOTHING from the host except the configuration directory: the plugins (including
-# netbox-tracepath-plugin and the example plugin) are baked into the image by Dockerfile-Plugins.
+# this overlay mounts no source trees: the plugins (including netbox-tracepath-plugin and the example plugin) are
+# baked into the image by Dockerfile-Plugins. Besides upstream's configuration mount, the only folder from the
+# host is data/.
+#
+# State lives in data/ in this folder, not in named Docker volumes, so the installation is backed up, moved and
+# removed as one folder. The mounts below replace the named volumes of upstream's docker-compose.yml (Compose
+# merges `volumes:` entries by their path in the container). Create the folders before the first start with
+# scripts/init-data.sh, which gives each the owner its image runs as (read from the image; today these):
+#   data/netbox/media, reports, scripts   NetBox's uploads, reports and scripts (user netbox, 999:0)    back up
+#   data/postgres                          the database (user postgres, 70:70); back it up with pg_dump  back up
+#   data/redis                             the background job queue (user valkey, 999:1000)             no backup
+#   data/redis-cache                       the cache (user valkey, 999:1000)                              no backup
+# :z (shared by netbox and netbox-worker) and :Z (one container) relabel the folders on SELinux hosts.
 #
 # Optional settings in a ".env" file next to this file (Compose reads it by itself):
-#   COMPOSE_PROJECT_NAME=netbox-plugins   the name that prefixes containers, network and volumes
+#   COMPOSE_PROJECT_NAME=netbox-plugins   the name that prefixes the containers and the network
 #   NETBOX_HTTP_PORT=8000                 the port NetBox is published on
 #
 # Use it with an explicit chain (docker-compose.override.yml is only picked up when no -f is given):
@@ -26,7 +37,30 @@ services:
       additional_contexts:
         # only needed when building; the checkout of netbox-tracepath-plugin next to this repository
         tracepath: ../netbox-tracepath-plugin
+    volumes: &netbox-data
+      - ./data/netbox/media:/opt/netbox/netbox/media:z
+      - ./data/netbox/reports:/opt/netbox/netbox/reports:z
+      - ./data/netbox/scripts:/opt/netbox/netbox/scripts:z
 
   netbox-worker:
     image: netbox:latest-plugins
     pull_policy: never
+    volumes: *netbox-data
+
+  postgres:
+    volumes:
+      - ./data/postgres:/var/lib/postgresql:Z
+    healthcheck:
+      # Over TCP, not the socket as upstream does: while the image sets up a new database it runs a temporary server
+      # that answers on the socket only. Checked over the socket, the container is "healthy" during that setup, and a
+      # restore or CREATE EXTENSION started then collides with the image's own CREATE EXTENSION steps: the setup
+      # script fails and the container exits (code 3). Over TCP it is healthy only once the real server runs.
+      test: pg_isready -q -t 2 -h 127.0.0.1 -d $$POSTGRES_DB -U $$POSTGRES_USER
+
+  redis:
+    volumes:
+      - ./data/redis:/data:Z
+
+  redis-cache:
+    volumes:
+      - ./data/redis-cache:/data:Z

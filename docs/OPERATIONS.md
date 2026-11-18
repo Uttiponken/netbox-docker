@@ -17,8 +17,9 @@ substitute the codename in the apt source line). The Docker prerequisites for
 > For building and installing from the repository, use §3 and `OFFLINE-REPLACE-INSTALL.md`: they use
 > `docker-compose.offline.yml` and a `.env` made from `offline.env.example` instead. Where a later section still
 > names `docker-compose.override.yml` or counts eight plugins, read it as that development setup (the deployment
-> now has thirteen: `netbox_tracepath_plugin`, `netbox_pathways`, `netbox_dns`, `notices`, `netbox_cable_labels`
-> and `netbox_topology_views` were added, `netbox_secrets` was dropped for NetBox 4.7, see §1).
+> now has fifteen: `netbox_tracepath_plugin`, `netbox_pathways`, `netbox_dns`, `notices`, `netbox_cable_labels`,
+> `netbox_topology_views` and `netbox_documents` were added, and `netbox_secrets`, dropped for NetBox 4.7, is back
+> with its 4.7 release, see §1).
 
 ---
 
@@ -46,24 +47,26 @@ digest so every build starts from the same image, see §6.3), carrying:
 | netbox-notices                  | `notices`              | 1.4.0          | Latest. `min_version=4.5`, no max. Maintenance/outage calendar and iCal feed (§8.6); FullCalendar is bundled. |
 | netbox-cable-labels             | `netbox_cable_labels`  | 0.1.0          | Only release. 4.2–4.99.99. Labels unlabelled cables `#<pk>`; that write bypasses the change log. |
 | netbox-topology-views           | `netbox_topology_views`| 5.0.0          | Latest. `min_version=4.7.0`. Fixes XSS issues in 4.7.0; saving positions needs add/change on the coordinate models. |
+| netbox-secrets                  | `netbox_secrets`       | 3.2.0          | Latest, the first release for 4.7: `min_version=4.7.1`, `max_version=4.7.99`. Coming from 3.1.x: create session keys again (below). |
+| netbox-documents                | `netbox_documents`     | 0.8.7          | Latest. `min_version=4.6.0`, `max_version=4.7.99`; 0.8.6 fixed the Documents list page and the panel on 4.7. Files go to `data/netbox/media`. |
 
-**netbox-secrets is not installed.** Its newest release, 3.1.2, still declares
-`max_version = "4.6.99"`, so NetBox 4.7 refuses to load it, and no release for
-4.7 exists yet (the work is in an unmerged pull request). It was dropped from
-`plugin_requirements.txt` and both `plugins.py` files. Nothing else depends on
-it. If your database holds secrets, they stay in the `netbox_secrets_*` tables
-untouched; they are not visible or editable until the plugin is added back
-(pin the new release, add `netbox_secrets` to both `plugins.py` files, rebuild),
-and the private key of the user key is needed to read them again. Keep the
-database backup (§5) and the private key file.
+**netbox-secrets is back.** It was dropped with the move to NetBox 4.7 (`v1.0.0`),
+because 3.1.x declares `max_version = "4.6.99"`; 3.2.0 is its first release for
+4.7. A database from the 4.6 deployment (netbox-secrets 3.1.1) still holds its
+secrets in the `netbox_secrets_*` tables, and the first start upgrades them:
+migration 0012 moves the secret role tree from MPTT to PostgreSQL `ltree` and
+cannot be undone, so **back up first** (§5). The user keys (RSA), the master key
+and the stored secrets need nothing, and the private key of a user key reads its
+secrets again. **Session keys from 3.1.x are rejected** (3.1.3 changed their
+hashing): delete them and create them again, in the UI, or with
+`DELETE /api/plugins/secrets/session-key/` and then `POST` to the same URL with
+the private key. Keep the database backup and the private key file.
 
-**netbox-documents is wanted but not installed yet.** Its 0.8.5 declares no
-`max_version`, so NetBox 4.7 loads it, but the Documents list page fails with
-`AttributeError: 'str' object has no attribute 'permissions_required'` (4.7
-removed the dict form of view `actions`) and the documents panel never renders
-on objects with the default configuration. The fix is an unmerged pull request
-(#112 upstream). Add it back the same way as netbox-secrets once a release works
-on 4.7.
+**netbox-documents** attaches documents (files or links) to sites, devices,
+circuits and other objects; its files go to `data/netbox/media`, which the
+backups cover (§5). 0.8.5 failed on 4.7 (the Documents list page
+error `'str' object has no attribute 'permissions_required'`, and the panel did
+not render); 0.8.6 fixed both. All its settings are optional.
 
 **netbox-routing cannot run next to netbox-bgp.** Both define the GraphQL types
 `CommunityType`, `CommunityListType` and `PrefixListType`; with both in
@@ -88,13 +91,25 @@ Files that make this reproducible (all in this repository):
 netbox-docker/
 ├── Dockerfile-Plugins                 # builds netbox:latest-plugins
 ├── plugin_requirements.txt            # pinned third-party plugin versions
-├── docker-compose.override.yml        # build target, port, SSO env stub (gitignored upstream — keep your own copy in version control)
+├── docker-compose.offline.yml         # the deployment overlay: plugins baked in, state in data/ (§3)
+├── offline.env.example                # copied to .env: project name, port, the compose files to use
+├── docker-compose.override.yml        # development only: source mounts (gitignored upstream — keep your own copy in version control)
+├── scripts/init-data.sh               # creates data/ with the right owners before the first start (§3.3)
 ├── configuration/
 │   ├── configuration.py               # from netbox-docker 5.1.1, unmodified
 │   └── plugins.py                     # PLUGINS + PLUGINS_CONFIG
-└── custom-plugins/
-    └── netbox-example-plugin/         # your own plugin, editable-installed
+├── custom-plugins/
+│   └── netbox-example-plugin/         # your own plugin, editable-installed
+└── data/                              # the installation's state (not in git, not in the build context):
+    ├── netbox/media, reports, scripts #   uploads, reports, scripts (owner 999:0)
+    ├── postgres/                      #   the database (owner 70:70)
+    └── redis/, redis-cache/           #   job queue and cache, no backup needed (owner 999:1000)
 ```
+
+All state lives in `data/` in the installation folder, as bind mounts, not in named Docker volumes: the
+installation is backed up, moved and removed as one folder, and nothing hides in `/var/lib/docker/volumes`.
+`docker-compose.offline.yml` mounts these folders in place of upstream's named volumes. An installation made
+before this change still has the named volumes; §6.9 moves it.
 
 Everything else in the directory is the unmodified `netbox-community/netbox-docker`
 repository at tag `5.1.1` (commit `7689fec7a70717f7e72feecb383e7a3f55538b5f`), merged into this repository.
@@ -302,7 +317,7 @@ sudo dnf install -y git          # Fedora
 
 Budget **~3 GB** for the built image set (sizes in section 0 of
 `OFFLINE-REPLACE-INSTALL.md`; a build host needs about 15 GB free) plus
-room for the Postgres data volume, which grows with your inventory — a few
+room for the database in `data/postgres`, which grows with your inventory — a few
 hundred MB is typical for a NetBox instance of a few thousand objects, but
 size for your actual scale.
 
@@ -371,16 +386,24 @@ started, so the start check in §3.3 is part of the verification, not optional.
 
 ### 3.3 Start it
 
-A new database needs PostGIS before NetBox starts. The PostGIS image normally has created it already, so this
-command usually only says "already exists, skipping". Keep it anyway.
+First create the folders in `data/` that hold the state: each owned by the user its image runs as, mode 700.
+Without this, Docker would create them empty and owned by root, and NetBox could not write its uploads. The script
+uses the image you just built, so the host needs nothing else; it is safe to run again.
+
+A new database also needs PostGIS before NetBox starts. The PostGIS image normally has created it already, so the
+`CREATE EXTENSION` command usually only says "already exists, skipping". Keep it anyway. (`--wait postgres` waits
+until the database's own setup is finished: `docker-compose.offline.yml` checks Postgres over TCP, because upstream's
+check over the socket already answers during that setup, and a command started then collides with it.)
 
 ```bash
+scripts/init-data.sh
 docker compose up -d --wait postgres
 docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS postgis"'
 docker compose up -d
 ```
 
-The first start applies all migrations and takes a few minutes. `docker compose up -d` may end with
+The first start applies all migrations and takes a few minutes (about 15 on an empty database on a small Linux
+server, 2026-11-17). `docker compose up -d` may end with
 `dependency failed to start: container …-netbox-1 is unhealthy`: the health check gave up before the migrations were
 done and the worker was not started. That is harmless. Follow `docker compose logs -f netbox` until "Listening at",
 wait until `docker compose ps netbox` says healthy, then run `docker compose up -d` again. Both `netbox` and
@@ -413,7 +436,7 @@ print(settings.PLUGINS)
 Expected output:
 
 ```
-['netbox_bgp', 'netbox_fms', 'netbox_example_plugin', 'netbox_inventory', 'netbox_otp_plugin', 'netbox_floorplan', 'netbox_wdm', 'netbox_tracepath_plugin', 'netbox_pathways', 'netbox_dns', 'notices', 'netbox_cable_labels', 'netbox_topology_views']
+['netbox_secrets', 'netbox_bgp', 'netbox_fms', 'netbox_example_plugin', 'netbox_inventory', 'netbox_otp_plugin', 'netbox_floorplan', 'netbox_wdm', 'netbox_tracepath_plugin', 'netbox_pathways', 'netbox_dns', 'notices', 'netbox_cable_labels', 'netbox_topology_views', 'netbox_documents']
 ```
 
 Create your admin user (interactive: run it yourself, not scripted, so the password never touches a log or
@@ -423,7 +446,7 @@ transcript):
 docker compose exec netbox /opt/netbox/venv/bin/python /opt/netbox/netbox/manage.py createsuperuser
 ```
 
-Log in at `http://<host>:8000/` (the port in `.env`) and confirm that **Plugins → Plugins** lists all thirteen as Active,
+Log in at `http://<host>:8000/` (the port in `.env`) and confirm that **Plugins → Plugins** lists all fifteen as Active,
 matching the table in §1.
 
 The example plugin's model migrations are committed under `custom-plugins/netbox-example-plugin/.../migrations/`,
@@ -544,42 +567,58 @@ Back up **before every upgrade**, and on whatever schedule your data
 criticality demands otherwise (daily is reasonable for an actively-used
 CMDB).
 
+The commands run in the installation folder and write to a backup folder; set both first (another disk for the
+backups is better):
+
+```bash
+INSTALL_DIR=/opt/netbox-plugins          # the installation folder (where .env and data/ are)
+BACKUP_DIR=/opt/netbox-backups           # where the backups go
+mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
+cd "$INSTALL_DIR"
+```
+
 ### 5.1 What needs backing up
 
 | Item | Where it lives | Backup method |
 |---|---|---|
-| PostgreSQL database (all NetBox data) | `postgres` container, volume `netbox-docker_netbox-postgres` | `pg_dump` (below) |
-| Media files (uploaded images/attachments) | volume `netbox-docker_netbox-media-files` | tar the volume |
-| Reports & scripts | volumes `netbox-docker_netbox-reports-files`, `netbox-docker_netbox-scripts-files` | tar the volumes |
+| PostgreSQL database (all NetBox data) | `data/postgres` (the `postgres` container) | `pg_dump` (5.2). Never copy the folder of a running database |
+| Media files (uploaded images, attachments, documents) | `data/netbox/media` | an archive of `data/netbox` (5.3) |
+| Reports & scripts | `data/netbox/reports`, `data/netbox/scripts` | the same archive (5.3) |
 | `SECRET_KEY` and `API_TOKEN_PEPPERS` | wherever you inject them (env, secrets file, or `configuration/configuration.py` override) | keep in your secrets store — **losing `SECRET_KEY` invalidates all sessions and encrypted secret-plugin data is NOT recoverable without it if netbox-secrets uses it for key derivation; treat it as a credential, not a config value** |
 | This repository (Dockerfile-Plugins, plugin_requirements.txt, configuration/, custom-plugins/, docker-compose.override.yml) | git | commit everything **except `env/*.env`** — see §8, these contain plaintext credentials; keep `docker-compose.override.yml` in your own private repo since upstream gitignores it |
 
-Redis (`redis`, `redis-cache`) is not backed up — it holds only the task
+Redis (`data/redis`, `data/redis-cache`) is not backed up — it holds only the task
 queue and cache, both safely rebuildable. A restart loses in-flight
 background jobs, which is acceptable.
+
+For a database dump and a file archive that belong together, stop the two containers that write
+(`docker compose stop netbox netbox-worker`) before 5.2 and start them again after 5.3
+(`docker compose start netbox netbox-worker`).
 
 ### 5.2 Database backup
 
 ```bash
-mkdir -p /opt/netbox-backups
-docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc \
-  > "/opt/netbox-backups/netbox-db-$(date +%Y%m%d-%H%M%S).dump"
+docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' \
+  > "$BACKUP_DIR/netbox-db-$(date +%Y%m%d-%H%M%S).dump"
+chmod 600 "$BACKUP_DIR"/netbox-db-*.dump
 ```
 
 (`-Fc` = custom format, compressed, restorable with `pg_restore` and safe
-across minor Postgres versions within the same major version.) Read
-`$POSTGRES_USER`/`$POSTGRES_DB` from `env/postgres.env` if you haven't
-exported them into your shell.
+across minor Postgres versions within the same major version.) The user
+and database names come from the container's own environment
+(`env/postgres.env`).
 
-### 5.3 Volume backups
+### 5.3 File backups
+
+The files in `data/netbox` belong to the container's user (999), so the archive is made in a container, from the
+stack's own NetBox image, without network; the owners are kept in the archive. The archive is then handed to you
+(`chown`) with mode 600:
 
 ```bash
-for vol in netbox-media-files netbox-reports-files netbox-scripts-files; do
-  docker run --rm \
-    -v "netbox-docker_${vol}:/data:ro" \
-    -v /opt/netbox-backups:/backup \
-    alpine tar czf "/backup/${vol}-$(date +%Y%m%d-%H%M%S).tar.gz" -C /data .
-done
+docker run --rm --user 0 --network none --entrypoint sh \
+  -v "$INSTALL_DIR/data/netbox:/data:ro,z" -v "$BACKUP_DIR:/backup" netbox:latest-plugins-postgis \
+  -c "f=/backup/netbox-files-$(date +%Y%m%d-%H%M%S).tar.gz && tar czf \"\$f\" -C /data media reports scripts \
+      && chown $(id -u):$(id -g) \"\$f\" && chmod 600 \"\$f\" && ls -l \"\$f\""
 ```
 
 ### 5.4 Configuration backup
@@ -588,9 +627,10 @@ If everything in §1's file tree is already committed to your own git repo,
 `git log` is your configuration backup history. Otherwise:
 
 ```bash
-tar czf "/opt/netbox-backups/netbox-config-$(date +%Y%m%d-%H%M%S).tar.gz" \
-  Dockerfile-Plugins plugin_requirements.txt docker-compose.override.yml \
-  configuration/ custom-plugins/ env/
+tar czf "$BACKUP_DIR/netbox-config-$(date +%Y%m%d-%H%M%S).tar.gz" \
+  .env Dockerfile-Plugins plugin_requirements.txt configuration/ extensions/postgis-pathways/configuration/ \
+  custom-plugins/ env/
+chmod 600 "$BACKUP_DIR"/netbox-config-*.tar.gz
 ```
 
 This archive contains the `env/*.env` credential files (§8) — store it with
@@ -598,17 +638,48 @@ the same access controls as the database backup, not in general-purpose git.
 
 ### 5.5 Restore procedure
 
+Name the backups to restore (here the newest of each), then stop the two containers that write:
+
 ```bash
-docker compose down
-docker volume rm netbox-docker_netbox-postgres   # only if restoring to a clean DB
-docker compose up -d postgres
-docker compose exec -T postgres pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists \
-  < /opt/netbox-backups/netbox-db-YYYYMMDD-HHMMSS.dump
+DUMP_FILE=$(ls -t "$BACKUP_DIR"/netbox-db-*.dump | head -n 1)            # the database dump to restore
+FILES_ARCHIVE=$(ls -t "$BACKUP_DIR"/netbox-files-*.tar.gz | head -n 1)   # the file archive to restore
+ls -l "$DUMP_FILE" "$FILES_ARCHIVE"
+docker compose stop netbox netbox-worker
+```
+
+**The database.** Into the running database (it replaces the objects in the dump):
+
+```bash
+docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' \
+  < "$DUMP_FILE"
+```
+
+Or into a clean database: remove `data/postgres` (through a container, because the files belong to uid 70), create
+it again, and restore into the new, empty database:
+
+```bash
+docker compose down                                   # no -v needed: nothing of this stack is in a volume
+docker run --rm --user 0 --network none --entrypoint rm -v "$INSTALL_DIR/data:/data:z" netbox:latest-plugins-postgis \
+  -rf /data/postgres
+scripts/init-data.sh                                  # data/postgres again, empty, owner 70:70
+docker compose up -d --wait postgres
+docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' \
+  < "$DUMP_FILE"
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS postgis"'
+```
+
+**The files.** Unpack the archive over `data/netbox` and give the files to the owner of `data/netbox` (the user the
+image runs as, set by `scripts/init-data.sh`):
+
+```bash
+docker run --rm --user 0 --network none --entrypoint sh \
+  -v "$INSTALL_DIR/data/netbox:/data:z" -v "$FILES_ARCHIVE:/backup/files.tar.gz:ro" netbox:latest-plugins-postgis \
+  -c 'tar xzf /backup/files.tar.gz -C /data && chown -R "$(stat -c %u:%g /data)" /data/media /data/reports /data/scripts'
 docker compose up -d --wait
 ```
 
-For volumes, reverse the tar step: extract the archive's contents back into
-a fresh volume mounted at `/data` before starting the stack.
+Files that exist in `data/netbox` but not in the archive stay; for an exact copy, empty the three folders first
+(the same `rm` as above, then `scripts/init-data.sh`).
 
 ---
 
@@ -757,8 +828,8 @@ matters when you upgrade a database that still runs the 4.6 stack (the installat
 commits describe):
 
 1. **Back up first** (§5.2). The migrations cannot be undone.
-2. **netbox-secrets stays behind.** The new image does not load it (§1). The stored secrets remain in the database
-   and can be read again once a release supports 4.7.
+2. **netbox-secrets stays behind.** The `v1.0.0` image does not load it (§1). The stored secrets remain in the
+   database; netbox-secrets 3.2.0, added later, reads them again (§1, session keys).
 3. **52 migrations apply on first start** (NetBox 4.7, netbox-bgp, -inventory, -floorplan, -fms, -pathways). The
    inventory asset `contact` field becomes contact assignments, and netbox-bgp makes `remote_address` nullable.
 4. **netbox-fms 0.6.0 deletes all fiber circuit path assignments** (its migration 0039) and derives fiber paths by
@@ -796,6 +867,90 @@ the development database, which still ran this repository's `v1.0.0` (NetBox 4.7
 6. **Sample data:** netbox-sampledata 0.8.2 or later (because of netbox-wdm 0.3.0). On the upgraded copy `verify.py`
    passes 70 checks after the dataset's own build, and a second build changes nothing; the netbox-tracepath-plugin
    smoke test and the dataset's tracepath acceptance tests pass.
+
+### 6.8 Adding netbox-secrets 3.2.0 and netbox-documents 0.8.7 (after `v1.3.0`)
+
+Tested on 2026-11-17 on a Linux server (Docker 29, Compose 5.7) from an empty database, not yet on a restored one.
+What to expect when an existing installation moves to this image:
+
+1. **Back up first** (§5.2). netbox-secrets' migration 0012 moves the secret role tree from MPTT to `ltree` and
+   cannot be undone.
+2. **The first start adds the two plugins' migrations:** netbox-secrets up to 0013 (from 3.1.1, as the 4.6 deployment
+   had: 0012 and 0013; on a database that never had it: all of them), netbox-documents from its first.
+3. **Session keys from netbox-secrets 3.1.x are rejected.** Each user deletes their session key and creates it again
+   with their private key, in the UI or with `DELETE` and then `POST` on `/api/plugins/secrets/session-key/`. Tested
+   that way: the new key decrypts, the deleted one is refused (HTTP 400). User keys, the master key and the stored
+   secrets need nothing; the REST API no longer returns a secret's `hash`.
+4. **netbox-documents** needs no settings. Its files go to `data/netbox/media/netbox-documents/`; a document can
+   also be a link (`external_url`). Its panel shows on device and other detail pages.
+5. **Sample data:** its build writes one encrypted login per router 01 again, and `verify.py` counts them: 71 checks
+   passed, 0 failed, on the empty database.
+
+Not tested yet: an upgrade of a database that holds netbox-secrets 3.1.1 secrets, which only a copy of that database
+can show. Rehearse it with `OFFLINE-REPLACE-INSTALL.md` steps D and F, then read a secret with a new session key.
+
+### 6.9 Moving an installation from named volumes to `data/`
+
+An installation made from this repository before the move to `data/` keeps its state in named Docker volumes
+(`<project>_netbox-postgres`, `<project>_netbox-media-files` and so on). The new `docker-compose.offline.yml` mounts
+`data/` instead, so do this once, when you update to it: copy each volume into its folder, start, check. The copy
+keeps every file and owner as it is; the PostgreSQL major version does not change, so the database folder can move
+as files (the stack is stopped). The volumes themselves are only read: they stay as your way back until you remove
+them.
+
+The development setup (`docker-compose.override.yml`) does not use `docker-compose.offline.yml`; it keeps its named
+volumes unless you add the same `volumes:` lines to it.
+
+1. **Back up first** (§5.2, the dump), with the installation still on the old files.
+2. **Update the installation's files** to this version (a new bundle, `OFFLINE-REPLACE-INSTALL.md` G3), but do not
+   start it yet. Then, in the installation folder:
+
+   ```bash
+   INSTALL_DIR=/opt/netbox-plugins                                       # the installation folder
+   cd "$INSTALL_DIR"
+   PROJECT_NAME=$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' .env)            # its Compose project name (the volumes' prefix)
+   docker volume ls --format '{{.Name}}' | grep "^${PROJECT_NAME:?}_netbox-"   # the volumes to move
+   docker compose down                                                   # NO -v: the volumes are the source
+   scripts/init-data.sh                                                  # the empty folders, owners and modes
+   ```
+
+3. **Copy each volume into its folder.** The loop stops if a folder is not empty, so it cannot mix two databases:
+
+   ```bash
+   for pair in netbox-postgres:postgres netbox-media-files:netbox/media netbox-reports-files:netbox/reports \
+               netbox-scripts-files:netbox/scripts netbox-redis-data:redis; do
+     docker run --rm --user 0 --network none --entrypoint sh \
+       -v "${PROJECT_NAME:?}_${pair%%:*}:/from:ro" -v "$INSTALL_DIR/data/${pair#*:}:/to:z" netbox:latest-plugins-postgis \
+       -c '[ -z "$(ls -A /to)" ] || { echo "/to is not empty" >&2; exit 1; }; cp -a /from/. /to/' \
+       && echo "copied ${pair%%:*} to data/${pair#*:}" || break
+   done
+   ```
+
+   `netbox-redis-cache-data` is not copied: it is only a cache.
+
+4. **Start and check:**
+
+   ```bash
+   docker compose up -d --wait
+   docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At -c "select count(*) from dcim_device"'
+   docker inspect -f '{{range .Mounts}}{{.Source}} {{end}}' "$(docker compose ps -q postgres)"   # .../data/postgres
+   ```
+
+   Log in, open an object with an uploaded image or a document (the media came across), and compare a few totals with
+   what NetBox showed before.
+
+5. **Back to the volumes, if something is wrong:** `docker compose down`, put the previous
+   `docker-compose.offline.yml` back, `docker compose up -d`. The volumes still hold the state from step 2.
+6. **After an acceptance period you choose**, remove the volumes. This is the point of no return; the dump from
+   step 1 stays your copy. (`docker compose down -v` does not remove them any more: no service uses them.)
+
+   ```bash
+   docker volume ls --format '{{.Name}}' | grep "^${PROJECT_NAME:?}_netbox-" | xargs docker volume rm
+   ```
+
+Tested on 2026-11-18 on a Linux server (Docker 29, Compose 5.7) with an installation in the old layout and the sample
+data restored into it: the row counts are identical after the move, the uploaded files are in `data/netbox/media`, a
+second copy into a filled folder is refused, and the six volumes stay untouched until step 6.
 
 ---
 
@@ -913,7 +1068,7 @@ done
 
 Replace each `*_PASSWORD` value with a freshly generated secret (e.g.
 `openssl rand -base64 32`), then recreate the affected containers. Changing
-`POSTGRES_PASSWORD` after the database volume already exists requires
+`POSTGRES_PASSWORD` after `data/postgres` already holds the database requires
 updating the password inside Postgres itself, not just the env file:
 
 ```bash

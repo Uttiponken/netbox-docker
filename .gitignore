@@ -17,3 +17,6 @@ super-linter.log
 __pycache__/
 *.pyc
 build-stage*.log
+
+# data/: the installation's state (docker-compose.offline.yml), never in git
+/data/

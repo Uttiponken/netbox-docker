@@ -42,6 +42,27 @@ carrying and installing offline is in `OFFLINE-REPLACE-INSTALL.md`. The sample d
   `OPERATIONS.md` §7 rewritten (it described an older route with the development override and the image set from
   before PostGIS), §6.7 upgrade log, §8.6 the notices calendar token, §9 notes on the plugins added in v1.1.0, and in
   the offline guide the rows for older plugin versions and what still needs the internet.
+- **Unreleased (2026-11-17): netbox-secrets 3.2.0 and netbox-documents 0.8.7.** netbox-secrets is back with its first
+  release for NetBox 4.7 (dropped in v1.0.0); netbox-documents works on 4.7 since 0.8.6. Tested on a Linux server
+  (Docker 29, Compose 5.7) from an empty database: the two-stage `--no-cache` build without "Unable to load plugin",
+  all fifteen plugins loaded, no migration left; the sample data's build and `verify.py` 71 passed, 0 failed (its
+  router logins through netbox-secrets); a secret decrypted with a session key, the session key deleted and created
+  again (the step after an upgrade from 3.1.x), the Secrets and Secret roles pages; the Documents list page, a link
+  and a file document through the API, both listed in a device's panel. Not tested: upgrading the secrets of a
+  database from the 4.6 deployment (netbox-secrets 3.1.1); rehearse that on a copy first (`OPERATIONS.md` §6.8).
+- **Unreleased (2026-11-18): the state in `data/`, as bind mounts.** `docker-compose.offline.yml` mounts
+  `data/postgres`, `data/netbox/{media,reports,scripts}`, `data/redis` and `data/redis-cache` in place of upstream's
+  named volumes, so an installation is backed up, moved and removed as one folder; `scripts/init-data.sh` creates
+  the folders with the owners the images run as. Postgres is checked over TCP: over the socket (upstream) it was
+  "healthy" while the image still set up a new database, and a restore started then made the container exit. The
+  backups (`OPERATIONS.md` §5) and `OFFLINE-REPLACE-INSTALL.md` follow; the guide now uses named variables (a table
+  and a file reloaded per section, no exports, guarded `rm`), and §6.9 moves an existing installation from its
+  volumes. Tested on a Linux server (Docker 29, Compose 5.7) in throwaway projects: a fresh install (init twice, all
+  mounts bind mounts, no named volume, the sample data with `verify.py` 71/0, the secrets and documents checks 18/0,
+  the uploaded file in `data/netbox/media`); the guide's D (from `data/`) and E/F into a second folder (row counts
+  identical, files restored owned 999:0, no migration left); and an installation in the old volume layout backed
+  up with D4 and moved with §6.9 (counts identical, the copy guard refuses a non-empty folder, the volumes left
+  untouched for the way back).
 
 ## Next
 
@@ -66,8 +87,6 @@ build and load can still stop NetBox from starting together.
 
 | Plugin | Why it is out | When a working release is published |
 |---|---|---|
-| netbox-secrets | 3.1.2 (the newest, 2026-10-26) still declares `max_version = "4.6.99"`; 4.7 support is an unmerged pull request. | Pin it, add `netbox_secrets` to both `plugins.py` files, rebuild. The secrets still in the database come back (the user key's private key is needed). The sample data adds its encrypted router logins when its build runs again. |
-| netbox-documents | 0.8.5 loads on 4.7, but its Documents list page fails (`'str' object has no attribute 'permissions_required'`) and its panel does not render with the default configuration. The fix is upstream pull request #112. | Pin it, add `netbox_documents` to both `plugins.py` files, rebuild. Its files go to the `netbox-media-files` volume, which the backups already cover. |
 | netbox-routing | Cannot run next to netbox-bgp: both define the GraphQL types `CommunityType`, `CommunityListType` and `PrefixListType`, and NetBox exits at startup with `DuplicatedTypeName`. 0.5.1 is pre-1.0 with open BGP bugs. | Replaces netbox-bgp, see below. |
 
 ## Planned: netbox-routing replaces netbox-bgp

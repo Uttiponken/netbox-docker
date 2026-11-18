@@ -12,20 +12,6 @@
 # for NetBox's "Unable to load plugin" warnings in the `docker compose build`
 # output.
 #
-# netbox-secrets is NOT installed: its newest release, 3.1.2, is still capped
-# at NetBox 4.6.99 and no 4.7-compatible release exists yet (the work is in an unmerged
-# pull request). Add it back here, to configuration/plugins.py and to
-# extensions/postgis-pathways/configuration/plugins.py once a release
-# supports 4.7. Existing secrets stay in the database untouched; see
-# docs/OPERATIONS.md.
-#
-# netbox-documents is wanted but NOT installed for the same reason: 0.8.5
-# declares no max_version, so it loads on 4.7, but its Documents list page
-# crashes ("'str' object has no attribute 'permissions_required'", NetBox
-# 4.7 removed dict-style view actions) and its panel never renders with the
-# default config. The fix is an unmerged pull request (#112). Add it back here
-# and to both plugins.py files once a release works on 4.7.
-#
 # netbox-routing is NOT installed while netbox-bgp is: both define the GraphQL
 # types CommunityType, CommunityListType and PrefixListType, and with both
 # enabled NetBox exits at startup with DuplicatedTypeName. The image still
@@ -33,6 +19,20 @@
 # The plan is to swap netbox-bgp for netbox-routing once netbox-routing has a
 # stable release, and rebuild the sample dataset to match.
 netbox-bgp==0.20.2
+
+# Encrypted secrets (for example device logins), each user with an RSA key pair.
+# 3.2.0 is min_version 4.7.1, max_version 4.7.99 (3.1.x was the 4.6 line).
+# Coming from 3.1.x, as the 4.6 deployment had: back up the database first
+# (migration 0012 moves secret roles from MPTT to ltree and cannot be undone), and
+# create session keys again, because 3.1.3 rejects the old ones: DELETE, then POST
+# /api/plugins/secrets/session-key/ with the private key. User keys, the master key
+# and the stored secrets need nothing. See docs/OPERATIONS.md §1.
+netbox-secrets==3.2.0
+
+# Documents attached to objects (sites, devices, circuits and more); the files go
+# to the netbox-media-files volume. 0.8.6 fixed NetBox 4.7 (the Documents list page
+# error and the hidden panel); 0.8.7 is min_version 4.6.0, max_version 4.7.99.
+netbox-documents==0.8.7
 
 # Alpha-quality (pre-1.0). Pin exact versions, read the changelog before any
 # bump, and back up the DB before running migrations after an upgrade.
